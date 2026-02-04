@@ -1,0 +1,8 @@
+models/**/*.obj filter=lfs diff=lfs merge=lfs -text
+models/**/*.stl filter=lfs diff=lfs merge=lfs -text
+models/**/*.png filter=lfs diff=lfs merge=lfs -text
+videos/* filter=lfs diff=lfs merge=lfs -text
+plots/action_waveforms.png filter=lfs diff=lfs merge=lfs -text
+plots/action_waveforms_rebuild.png filter=lfs diff=lfs merge=lfs -text
+plots/hdml_architecture.png filter=lfs diff=lfs merge=lfs -text
+results/unitree_kick_real.json filter=lfs diff=lfs merge=lfs -text
