@@ -76,8 +76,14 @@ class QuadrupedDogEnv(gym.Env):
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         self.step_count += 1
         act = np.clip(action, -1.0, 1.0)
-        # Scale to motor torque (33.5 N*m max)
-        self.data.ctrl[:] = act * 25.0
+
+        # Map normalized action [-1, 1] to target joint positions (PD position servos)
+        q_target = np.zeros(12, dtype=np.float64)
+        for i in range(4):
+            q_target[i * 3 + 0] = 0.0 + 0.35 * float(act[i * 3 + 0])
+            q_target[i * 3 + 1] = 0.85 + 0.45 * float(act[i * 3 + 1])
+            q_target[i * 3 + 2] = -1.75 + 0.50 * float(act[i * 3 + 2])
+        self.data.ctrl[:] = q_target
 
         pos_before = self.data.qpos[0]
         # Step MuJoCo physics frame_skip times (dt = 0.002 * 10 = 0.02s => 50 Hz control loop)
@@ -90,15 +96,15 @@ class QuadrupedDogEnv(gym.Env):
         # Rewards:
         # 1. Forward velocity reward
         forward_reward = (pos_after - pos_before) / (self.frame_skip * 0.002)
-        # 2. Stability / upright posture reward (torso z in [0.25, 0.45])
+        # 2. Stability / upright posture reward (torso z in [0.22, 0.30])
         torso_z = float(obs[0])
-        healthy_reward = 1.0 if (0.20 <= torso_z <= 0.50) else -2.0
+        healthy_reward = 1.0 if (0.22 <= torso_z <= 0.32) else -1.5
         # 3. Energy efficiency penalty
-        ctrl_cost = 0.005 * float(np.sum(np.square(act)))
+        ctrl_cost = 0.002 * float(np.sum(np.square(act)))
 
         reward = float(1.5 * forward_reward + healthy_reward - ctrl_cost)
 
-        terminated = not (0.12 <= torso_z <= 0.55)
+        terminated = not (0.15 <= torso_z <= 0.36)
         truncated = self.step_count >= self.max_episode_steps
 
         return obs, reward, terminated, truncated, {"forward_vel": forward_reward, "height": torso_z}

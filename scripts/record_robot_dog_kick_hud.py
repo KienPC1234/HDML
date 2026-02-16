@@ -174,7 +174,6 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="configs/unitree_a1_default.yaml", help="Model config YAML")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/unitree_a1/best_model.pt", help="Trained checkpoint")
     parser.add_argument("--output-mp4", type=str, default="videos/unitree_a1_robot_dog_kick_recovery.mp4", help="MP4 video path")
-    parser.add_argument("--output-gif", type=str, default="videos/unitree_a1_robot_dog_kick_recovery.gif", help="GIF path")
     parser.add_argument("--steps", type=int, default=300, help="Number of rollout steps to record")
     parser.add_argument("--device", type=str, default="cuda", help="Target device")
     args = parser.parse_args()
@@ -303,21 +302,19 @@ def main() -> None:
 
     env.close()
 
-    # Export MP4 Video (H.264 / 30 fps)
-    logger.info(f"Writing {len(video_frames)} frames to MP4: {args.output_mp4}...")
-    h, w, _ = video_frames[0].shape
-    writer = cv2.VideoWriter(args.output_mp4, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+    # Export High-Efficiency Compressed MP4 Video (H.264 / AV1 compatible, CRF=26, Faststart)
+    logger.info(f"Writing {len(video_frames)} frames to high-efficiency MP4: {args.output_mp4}...")
+    writer = imageio.get_writer(
+        args.output_mp4,
+        fps=30,
+        codec="libx264",
+        pixelformat="yuv420p",
+        ffmpeg_params=["-crf", "26", "-preset", "fast", "-movflags", "+faststart"],
+    )
     for f in video_frames:
-        bgr = cv2.cvtColor(f, cv2.COLOR_RGB2BGR)
-        writer.write(bgr)
-    writer.release()
-    logger.info(f"Successfully saved MP4 video: {args.output_mp4}")
-
-    # Export optimized GIF for instant viewing
-    logger.info(f"Writing optimized GIF to: {args.output_gif}...")
-    gif_frames = [cv2.resize(f, (640, 360), interpolation=cv2.INTER_AREA) for f in video_frames[::2]]
-    imageio.mimsave(args.output_gif, gif_frames, fps=15, loop=0)
-    logger.info(f"Successfully saved GIF: {args.output_gif}")
+        writer.append_data(f)
+    writer.close()
+    logger.info(f"Successfully saved optimized MP4 video: {args.output_mp4}")
 
 
 if __name__ == "__main__":
