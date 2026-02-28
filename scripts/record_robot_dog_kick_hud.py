@@ -216,9 +216,9 @@ def main() -> None:
 
     # Predetermined Kick Events: [start_step, end_step, lateral_force_magnitude]
     kick_schedule = [
-        (60, 75, 35.0),    # Strong lateral kick at step 60
-        (150, 165, -40.0), # Strong reverse shove at step 150
-        (240, 255, 45.0),  # Heavy disturbance at step 240
+        (60, 62, 8.0),    # Lateral push at step 60 (40ms impact)
+        (140, 142, -8.0), # Reverse lateral push at step 140
+        (220, 222, 10.0), # Strong lateral impulse at step 220
     ]
 
     logger.info(f"Starting closed-loop simulation with {len(kick_schedule)} physical kick events...")
@@ -261,16 +261,15 @@ def main() -> None:
         history_actions.append(action)
         ep_actions.append(action)
 
-        # 4. Apply Action with Physical Kick Impulses
-        exec_action = action.copy()
+        # 4. Apply Physical Kick Impulses via MuJoCo External Force on Torso
         if kick_active:
-            # Physical torque perturbation on joints from external body impact
-            exec_action[0] += (kick_force / 40.0)
-            exec_action[2] -= (kick_force / 40.0)
-            exec_action = np.clip(exec_action, -1.0, 1.0)
+            if hasattr(env, "apply_kick"):
+                env.apply_kick((0.0, float(kick_force), 0.0))
+            elif hasattr(env.unwrapped, "data"):
+                env.unwrapped.data.qfrc_applied[1] += float(kick_force)
 
         # Step Environment
-        next_obs, reward, term, trunc, _ = env.step(exec_action)
+        next_obs, reward, term, trunc, _ = env.step(action)
         obs = next_obs
         ep_rewards.append(float(reward))
         current_rtg -= float(reward)
