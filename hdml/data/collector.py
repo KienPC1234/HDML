@@ -30,74 +30,6 @@ def discount_cumsum(x: np.ndarray, gamma: float) -> np.ndarray:
     return discounted
 
 
-class MediumExpertLocomotionPolicy:
-    """Phase-Coupled Central Pattern Generator (CPG) with dynamic state feedback.
-    
-    Generates high-return expert & medium-expert locomotion trajectories for D4RL MuJoCo benchmarks.
-    """
-
-    def __init__(self, action_dim: int, env_name: str = "HalfCheetah-v5", seed: int = 42) -> None:
-        self.action_dim = action_dim
-        self.env_name = env_name
-        self.rng = np.random.default_rng(seed)
-
-        if "halfcheetah" in env_name.lower():
-            # HalfCheetah 6-DOF bio-mechanical bounding gait: [bthigh, bshin, bfoot, fthigh, fshin, ffoot]
-            self.freq = 3.5
-            self.phases = np.array([0.0, np.pi / 4, -np.pi / 3, np.pi, np.pi + np.pi / 4, np.pi - np.pi / 3], dtype=np.float32)
-            self.amplitudes = np.array([0.95, 0.85, 0.70, 0.95, 0.85, 0.70], dtype=np.float32)
-        elif "ant" in env_name.lower():
-            # Ant 8-DOF quadrupedal alternating diagonal trot gait
-            self.freq = 2.5
-            self.phases = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2, np.pi, 3 * np.pi / 2, 0.0, np.pi / 2], dtype=np.float32)
-            self.amplitudes = np.array([0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80], dtype=np.float32)
-        elif "hopper" in env_name.lower():
-            # Hopper 3-DOF dynamic single-leg hopping & balance gait: [thigh, leg, foot]
-            self.freq = 2.8
-            self.phases = np.array([0.0, np.pi / 3, -np.pi / 4], dtype=np.float32)
-            self.amplitudes = np.array([0.85, 0.90, 0.65], dtype=np.float32)
-        elif "walker" in env_name.lower():
-            # Walker2d 6-DOF alternating bipedal stepping gait: [r_thigh, r_leg, r_foot, l_thigh, l_leg, l_foot]
-            self.freq = 2.2
-            self.phases = np.array([0.0, np.pi / 4, -np.pi / 6, np.pi, np.pi + np.pi / 4, np.pi - np.pi / 6], dtype=np.float32)
-            self.amplitudes = np.array([0.90, 0.80, 0.60, 0.90, 0.80, 0.60], dtype=np.float32)
-        else:
-            self.freq = 2.0
-            self.phases = self.rng.uniform(0, 2 * np.pi, size=(action_dim,)).astype(np.float32)
-            self.amplitudes = np.full((action_dim,), 0.8, dtype=np.float32)
-
-    def __call__(self, obs: np.ndarray, step: int, quality: str = "expert") -> np.ndarray:
-        t = step * 0.05
-        # Dynamic phase-coupled oscillation
-        base_act = self.amplitudes * np.sin(self.freq * t * 2 * np.pi + self.phases)
-
-        # Dynamic state feedback stabilization
-        feedback = np.zeros(self.action_dim, dtype=np.float32)
-        if "halfcheetah" in self.env_name.lower() and len(obs) >= 14:
-            feedback = -0.05 * obs[8:14]
-        elif "hopper" in self.env_name.lower() and len(obs) >= 6:
-            # Torso pitch balance: obs[1]=pitch angle, obs[5]=pitch velocity
-            pitch_corr = -1.2 * obs[1] - 0.1 * obs[5]
-            feedback[0] = pitch_corr
-        elif "walker" in self.env_name.lower() and len(obs) >= 14:
-            # Torso balance: obs[1]=pitch angle, obs[2]=pitch velocity
-            feedback[0] = -0.8 * obs[1]
-            feedback[3] = -0.8 * obs[1]
-
-        # Quality adjustment: expert (low noise), medium (moderate noise/attenuation), medium-replay
-        if quality == "medium":
-            noise = self.rng.normal(0.0, 0.25, size=(self.action_dim,)).astype(np.float32)
-            scale = 0.75
-        elif quality == "medium-replay":
-            noise = self.rng.normal(0.0, 0.40, size=(self.action_dim,)).astype(np.float32)
-            scale = 0.60
-        else:  # expert / medium-expert
-            noise = self.rng.normal(0.0, 0.04, size=(self.action_dim,)).astype(np.float32)
-            scale = 1.0
-
-        return np.clip(scale * (base_act + feedback) + noise, -1.0, 1.0)
-
-
 class HeuristicPolicy:
     """Heuristic / Sinusoidal Oscillatory Controller for continuous locomotion data generation."""
 
@@ -121,7 +53,7 @@ class TrajectoryCollector:
 
     def __init__(
         self,
-        env_name: str = "Ant-v5",
+        env_name: str = "Ant-v4",
         gamma: float = 0.99,
         seed: int = 42,
     ) -> None:
@@ -253,22 +185,14 @@ class TrajectoryCollector:
 
         trajectories: list[dict[str, np.ndarray]] = []
         for i in range(num_trajectories):
-            obs = loaded[f"traj_{i}_observations"]
-            acts = loaded[f"traj_{i}_actions"]
-            rews = loaded[f"traj_{i}_rewards"]
-            rtgs = loaded[f"traj_{i}_returns_to_go"]
-            dones = loaded[f"traj_{i}_dones"] if f"traj_{i}_dones" in loaded else (loaded[f"traj_{i}_terminals"] if f"traj_{i}_terminals" in loaded else np.zeros(len(rews), dtype=bool))
-            timesteps = loaded[f"traj_{i}_timesteps"] if f"traj_{i}_timesteps" in loaded else np.arange(len(rews), dtype=np.int64)
-            total_ret = loaded[f"traj_{i}_total_return"] if f"traj_{i}_total_return" in loaded else float(np.sum(rews))
-
             traj = {
-                "observations": obs,
-                "actions": acts,
-                "rewards": rews,
-                "returns_to_go": rtgs,
-                "dones": dones,
-                "timesteps": timesteps,
-                "total_return": total_ret,
+                "observations": loaded[f"traj_{i}_observations"],
+                "actions": loaded[f"traj_{i}_actions"],
+                "rewards": loaded[f"traj_{i}_rewards"],
+                "returns_to_go": loaded[f"traj_{i}_returns_to_go"],
+                "dones": loaded[f"traj_{i}_dones"],
+                "timesteps": loaded[f"traj_{i}_timesteps"],
+                "total_return": loaded[f"traj_{i}_total_return"],
             }
             trajectories.append(traj)
 
