@@ -104,10 +104,10 @@ class Mamba3Block(nn.Module):
 
 
 class Mamba3CognitiveBackbone(nn.Module):
-    """HDML Mamba-3 Cognitive Backbone.
+    """HDML-V2 Mamba-3 Cognitive Backbone.
     
-    Processes the sequence of fused multimodal state embeddings u_t
-    using Mamba-3 blocks with RoPE phase tracking and trapezoidal discretization.
+    Uses multi-layer Complex-Valued Selective State Space Models (Mamba-3 emulation)
+    to model long-horizon 3D dynamics with exact angular phase tracking.
     """
 
     def __init__(

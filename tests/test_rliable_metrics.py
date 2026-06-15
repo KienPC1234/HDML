@@ -38,9 +38,8 @@ def test_probability_of_improvement():
     assert lo >= 0.95
 
     # Equal distributions should have prob around 0.5
-    rng = np.random.default_rng(42)
-    eq_a = rng.standard_normal((1, 200))
-    eq_b = rng.standard_normal((1, 200))
+    eq_a = np.random.randn(1, 50)
+    eq_b = np.random.randn(1, 50)
     prob_eq, _, _ = compute_probability_of_improvement(eq_a, eq_b, num_bootstraps=200, seed=42)
     assert 0.35 <= prob_eq <= 0.65
 
@@ -57,9 +56,9 @@ def test_performance_profile():
 
 def test_generate_rliable_summary_plot(tmp_path: Path):
     res_dict = {
-        "HDML (Ours)": np.array([92.0, 95.0, 91.0, 96.0, 94.0, 93.0]),
-        "Decision Transformer": np.array([85.0, 82.0, 89.0, 86.0, 84.0, 88.0]),
-        "Diffusion Policy": np.array([78.0, 80.0, 75.0, 82.0, 79.0, 81.0]),
+        "HDML-V2 (Ours)": np.array([92.0, 95.0, 91.0, 96.0, 94.0, 93.0]),
+        "Diffusion Policy": np.array([85.0, 82.0, 88.0, 84.0, 86.0, 83.0]),
+        "Decision Transformer": np.array([80.0, 78.0, 83.0, 81.0, 79.0, 82.0]),
     }
     plot_file = tmp_path / "test_rliable.png"
     out = generate_rliable_summary_plot(res_dict, env_name="HalfCheetah-v5", save_path=str(plot_file))

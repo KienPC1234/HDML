@@ -56,6 +56,7 @@ class MambaCognitiveBackbone(nn.Module):
         expand: int = 2,
         num_layers: int = 3,
         d_subgoal: int = 64,
+        prop_dim: int = 27,
     ) -> None:
         super().__init__()
         self.d_model = d_model
@@ -64,6 +65,7 @@ class MambaCognitiveBackbone(nn.Module):
         self.expand = expand
         self.num_layers = num_layers
         self.d_subgoal = d_subgoal
+        self.prop_dim = prop_dim
 
         # Stack of Mamba SSM Layers
         self.layers = nn.ModuleList([
@@ -93,10 +95,17 @@ class MambaCognitiveBackbone(nn.Module):
             nn.Linear(d_model // 2, 1),
         )
 
+        # Forward Dynamics Prediction Head
+        self.forward_dynamics_head = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.SiLU(),
+            nn.Linear(d_model // 2, prop_dim),
+        )
+
     def forward(
         self,
         u_t: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sequence forward pass over historical context.
 
         Args:
@@ -116,8 +125,10 @@ class MambaCognitiveBackbone(nn.Module):
         for layer in self.layers:
             x = layer(x)
 
-        latent = self.final_norm(x)                         # (B, T, d_model)
-        subgoals = self.subgoal_head(latent)               # (B, T, d_subgoal)
-        values = self.value_head(latent)                   # (B, T, 1)
+        latent_features = self.final_norm(x)
 
-        return subgoals, values, latent
+        subgoals = self.subgoal_head(latent_features)
+        values = self.value_head(latent_features)
+        next_states_pred = self.forward_dynamics_head(latent_features)
+
+        return subgoals, latent_features, values, next_states_pred

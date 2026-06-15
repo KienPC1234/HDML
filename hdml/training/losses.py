@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 class HDMLLoss(nn.Module):
     """
-    HDML Comprehensive Loss Function.
+    HDML-V2 Comprehensive Loss Function.
 
     Includes:
     1. Flow Matching Loss (Action Generation)
@@ -108,7 +108,7 @@ class HDMLLoss(nn.Module):
         target_states: torch.Tensor,
         mask: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, float]]:
-        """Compute HDML composite loss.
+        """Compute HDML-V2 composite loss.
 
         Args:
             target_velocity: Flow-matching target velocity (a_1 - a_0).
