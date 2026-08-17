@@ -226,3 +226,7 @@ __marimo__/
 *.onnx.data
 !data/.gitkeep
 !checkpoints/.gitkeep
+
+# Runtime logs
+logs/
+*.log

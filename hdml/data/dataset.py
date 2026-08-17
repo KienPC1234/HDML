@@ -48,39 +48,47 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         else:
             self.state_std = np.asarray(state_std, dtype=np.float32) + 1e-6
 
-        # Calculate total valid frames
-        total_samples = sum(len(traj["observations"]) for traj in self.trajectories)
+        # Fast vectorized sliding window buffer creation
         k = self.context_length
+        all_states_list: list[np.ndarray] = []
+        all_actions_list: list[np.ndarray] = []
+        all_rtgs_list: list[np.ndarray] = []
+        all_time_list: list[np.ndarray] = []
+        all_mask_list: list[np.ndarray] = []
 
-        # Preallocate contiguous buffers
-        states_buf = np.zeros((total_samples, k, self.prop_dim), dtype=np.float32)
-        actions_buf = np.zeros((total_samples, k, self.action_dim), dtype=np.float32)
-        rtgs_buf = np.zeros((total_samples, k, 1), dtype=np.float32)
-        timesteps_buf = np.zeros((total_samples, k), dtype=np.int64)
-        mask_buf = np.zeros((total_samples, k), dtype=np.float32)
-
-        cursor = 0
         for traj in self.trajectories:
-            raw_states = traj["observations"]
+            raw_states = (traj["observations"] - self.state_mean) / self.state_std
             raw_actions = traj["actions"]
-            raw_rtgs = traj["returns_to_go"]
+            raw_rtgs = (traj["returns_to_go"] / self.scale_return).reshape(-1, 1)
             raw_timesteps = traj["timesteps"]
             traj_len = len(raw_states)
 
-            norm_states = (raw_states - self.state_mean) / self.state_std
-            scaled_rtgs = raw_rtgs / self.scale_return
+            pad_states = np.pad(raw_states, ((0, k), (0, 0)), mode="constant")
+            pad_actions = np.pad(raw_actions, ((0, k), (0, 0)), mode="constant")
+            pad_rtgs = np.pad(raw_rtgs, ((0, k), (0, 0)), mode="constant")
+            pad_time = np.pad(raw_timesteps, (0, k), mode="constant")
 
-            for t in range(traj_len):
-                end_t = min(t + k, traj_len)
-                actual_len = end_t - t
+            s_windows = np.lib.stride_tricks.sliding_window_view(pad_states, (k, self.prop_dim))[:traj_len, 0, :, :]
+            a_windows = np.lib.stride_tricks.sliding_window_view(pad_actions, (k, self.action_dim))[:traj_len, 0, :, :]
+            r_windows = np.lib.stride_tricks.sliding_window_view(pad_rtgs, (k, 1))[:traj_len, 0, :, :]
+            t_windows = np.lib.stride_tricks.sliding_window_view(pad_time, k)[:traj_len]
 
-                states_buf[cursor, :actual_len] = norm_states[t:end_t]
-                actions_buf[cursor, :actual_len] = raw_actions[t:end_t]
-                rtgs_buf[cursor, :actual_len, 0] = scaled_rtgs[t:end_t]
-                timesteps_buf[cursor, :actual_len] = raw_timesteps[t:end_t]
-                mask_buf[cursor, :actual_len] = 1.0
+            # Vectorized mask construction
+            steps_remaining = np.maximum(0, np.minimum(k, traj_len - np.arange(traj_len)))
+            col_indices = np.arange(k)
+            masks = (col_indices < steps_remaining[:, None]).astype(np.float32)
 
-                cursor += 1
+            all_states_list.append(s_windows)
+            all_actions_list.append(a_windows)
+            all_rtgs_list.append(r_windows)
+            all_time_list.append(t_windows)
+            all_mask_list.append(masks)
+
+        states_buf = np.ascontiguousarray(np.concatenate(all_states_list, axis=0), dtype=np.float32)
+        actions_buf = np.ascontiguousarray(np.concatenate(all_actions_list, axis=0), dtype=np.float32)
+        rtgs_buf = np.ascontiguousarray(np.concatenate(all_rtgs_list, axis=0), dtype=np.float32)
+        timesteps_buf = np.ascontiguousarray(np.concatenate(all_time_list, axis=0), dtype=np.int64)
+        mask_buf = np.ascontiguousarray(np.concatenate(all_mask_list, axis=0), dtype=np.float32)
 
         self.states = torch.from_numpy(states_buf)
         self.actions = torch.from_numpy(actions_buf)
@@ -90,6 +98,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self.target_actions = self.actions.clone()
         self.target_rtgs = self.rtgs.clone()
 
+        total_samples = self.states.shape[0]
         logger.info(
             f"FastTensorTrajectoryDataset initialized with {total_samples} pre-vectorized frames "
             f"in contiguous memory (context_length={context_length})."

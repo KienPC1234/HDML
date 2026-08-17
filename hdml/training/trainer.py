@@ -44,7 +44,8 @@ class HDMLTrainer:
 
         # DataLoader configuration
         use_cuda = self.device.type == "cuda"
-        num_workers = self.config.num_workers if use_cuda else 0
+        is_fast_dataset = hasattr(self.train_dataset, "states")
+        num_workers = 0 if is_fast_dataset else (self.config.num_workers if use_cuda else 0)
         pin_memory = self.config.pin_memory if use_cuda else False
         persistent_workers = (num_workers > 0) and self.config.persistent_workers
         prefetch_factor = self.config.prefetch_factor if num_workers > 0 else None
@@ -60,14 +61,16 @@ class HDMLTrainer:
         )
 
         if self.val_dataset is not None:
+            is_fast_val = hasattr(self.val_dataset, "states")
+            val_workers = 0 if is_fast_val else (self.config.num_workers if use_cuda else 0)
             self.val_loader = DataLoader(
                 self.val_dataset,
                 batch_size=self.config.batch_size,
                 shuffle=False,
-                num_workers=num_workers,
+                num_workers=val_workers,
                 pin_memory=pin_memory,
-                persistent_workers=persistent_workers,
-                prefetch_factor=prefetch_factor,
+                persistent_workers=(val_workers > 0) and self.config.persistent_workers,
+                prefetch_factor=self.config.prefetch_factor if val_workers > 0 else None,
             )
         else:
             self.val_loader = None
@@ -107,6 +110,37 @@ class HDMLTrainer:
         self.output_dir = Path(self.config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.best_loss = float("inf")
+
+        # TensorBoard & WandB Web Tracking
+        self.log_dir = Path(self.config.log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.config.use_tensorboard:
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+                self.writer: SummaryWriter | None = SummaryWriter(log_dir=str(self.log_dir))
+                logger.info(f"TensorBoard logging enabled. Log dir: {self.log_dir}")
+            except ImportError:
+                logger.warning("torch.utils.tensorboard not available. Disabling TensorBoard.")
+                self.writer = None
+        else:
+            self.writer = None
+
+        if self.config.use_wandb:
+            try:
+                import wandb
+                wandb.init(
+                    project=self.config.wandb_project,
+                    name=self.config.wandb_run_name,
+                    config=self.config.__dict__,
+                )
+                self.wandb_active = True
+                logger.info(f"WandB logging active. Project: {self.config.wandb_project}")
+            except Exception as e:
+                logger.warning(f"Could not initialize WandB: {e}")
+                self.wandb_active = False
+        else:
+            self.wandb_active = False
 
     def _adjust_lr(self) -> float:
         """Calculate and set the learning rate using Warmup + Cosine Decay."""
@@ -206,6 +240,29 @@ class HDMLTrainer:
             "train_value_loss": float(sum(value_losses) / max(1, len(value_losses))),
             "throughput_fps": throughput,
         }
+
+        # Log training metrics to TensorBoard & WandB
+        if self.writer is not None:
+            self.writer.add_scalar("Train/TotalLoss", metrics["train_loss"], epoch)
+            self.writer.add_scalar("Train/ActionLoss", metrics["train_action_loss"], epoch)
+            self.writer.add_scalar("Train/SubgoalLoss", metrics["train_subgoal_loss"], epoch)
+            self.writer.add_scalar("Train/ValueLoss", metrics["train_value_loss"], epoch)
+            self.writer.add_scalar("Train/Throughput_FPS", metrics["throughput_fps"], epoch)
+
+        if self.wandb_active:
+            try:
+                import wandb
+                wandb.log({
+                    "train/epoch": epoch,
+                    "train/loss": metrics["train_loss"],
+                    "train/action_loss": metrics["train_action_loss"],
+                    "train/subgoal_loss": metrics["train_subgoal_loss"],
+                    "train/value_loss": metrics["train_value_loss"],
+                    "train/throughput_fps": metrics["throughput_fps"],
+                })
+            except Exception as e:
+                logger.warning(f"WandB logging error: {e}")
+
         return metrics
 
     @torch.inference_mode()
@@ -247,10 +304,11 @@ class HDMLTrainer:
             total_losses.append(loss_dict["total_loss"])
             action_losses.append(loss_dict["action_loss"])
 
-        return {
+        val_metrics = {
             "val_loss": float(sum(total_losses) / max(1, len(total_losses))),
             "val_action_loss": float(sum(action_losses) / max(1, len(action_losses))),
         }
+        return val_metrics
 
     def save_checkpoint(self, path: Path | str, is_best: bool = False) -> Path:
         """Save current training state and weights."""
@@ -294,6 +352,21 @@ class HDMLTrainer:
             if is_best:
                 self.best_loss = current_val
 
+            if "val_loss" in val_metrics and self.writer is not None:
+                self.writer.add_scalar("Val/TotalLoss", val_metrics["val_loss"], epoch)
+                self.writer.add_scalar("Val/ActionLoss", val_metrics["val_action_loss"], epoch)
+
+            if "val_loss" in val_metrics and self.wandb_active:
+                try:
+                    import wandb
+                    wandb.log({
+                        "val/epoch": epoch,
+                        "val/loss": val_metrics["val_loss"],
+                        "val/action_loss": val_metrics["val_action_loss"],
+                    })
+                except Exception:
+                    pass
+
             val_str = f" | Val Loss: {val_metrics['val_loss']:.4f}" if "val_loss" in val_metrics else ""
             logger.info(
                 f"Epoch [{epoch:02d}/{self.config.max_epochs:02d}] "
@@ -309,6 +382,17 @@ class HDMLTrainer:
         # Clear VRAM cache at end of training
         if self.device.type == "cuda":
             torch.cuda.empty_cache()
+
+        if self.writer is not None:
+            self.writer.close()
+            logger.info(f"TensorBoard session closed. Launch dashboard with: tensorboard --logdir {self.log_dir}")
+
+        if self.wandb_active:
+            try:
+                import wandb
+                wandb.finish()
+            except Exception:
+                pass
 
         logger.info("HDML training completed successfully.")
         return history

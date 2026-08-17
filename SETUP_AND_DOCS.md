@@ -137,9 +137,9 @@ python scripts/export_onnx.py \
     --output checkpoints/ant_v4/hdml_liquid_head.onnx
 ```
 
-### 5.5. Execute Automated Test Suite (16 Unit & Integration Tests)
+### 5.5. Execute Automated Test Suite (28 Unit & Integration Tests)
 ```bash
-pytest tests/ -v
+python -c "import pytest; pytest.main(['tests/', '-v'])"
 ```
 
 ---

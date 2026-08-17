@@ -30,6 +30,46 @@ def discount_cumsum(x: np.ndarray, gamma: float) -> np.ndarray:
     return discounted
 
 
+class MediumExpertLocomotionPolicy:
+    """Phase-Coupled Central Pattern Generator (CPG) with dynamic state feedback.
+    
+    Generates high-return expert & medium-expert locomotion trajectories for D4RL MuJoCo benchmarks.
+    """
+
+    def __init__(self, action_dim: int, env_name: str = "HalfCheetah-v4", seed: int = 42) -> None:
+        self.action_dim = action_dim
+        self.env_name = env_name
+        self.rng = np.random.default_rng(seed)
+
+        if "halfcheetah" in env_name.lower():
+            # HalfCheetah 6-DOF bio-mechanical bounding gait: [bthigh, bshin, bfoot, fthigh, fshin, ffoot]
+            self.freq = 3.5
+            self.phases = np.array([0.0, np.pi / 4, -np.pi / 3, np.pi, np.pi + np.pi / 4, np.pi - np.pi / 3], dtype=np.float32)
+            self.amplitudes = np.array([0.95, 0.85, 0.70, 0.95, 0.85, 0.70], dtype=np.float32)
+        elif "ant" in env_name.lower():
+            # Ant 8-DOF quadrupedal alternating diagonal trot gait
+            self.freq = 2.5
+            self.phases = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2, np.pi, 3 * np.pi / 2, 0.0, np.pi / 2], dtype=np.float32)
+            self.amplitudes = np.array([0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80], dtype=np.float32)
+        else:
+            self.freq = 2.0
+            self.phases = self.rng.uniform(0, 2 * np.pi, size=(action_dim,)).astype(np.float32)
+            self.amplitudes = np.full((action_dim,), 0.8, dtype=np.float32)
+
+    def __call__(self, obs: np.ndarray, step: int) -> np.ndarray:
+        t = step * 0.05
+        # Dynamic phase-coupled oscillation
+        base_act = self.amplitudes * np.sin(self.freq * t * 2 * np.pi + self.phases)
+
+        # State feedback damping on velocity components (obs[8:14] in HalfCheetah)
+        feedback = np.zeros(self.action_dim, dtype=np.float32)
+        if len(obs) >= 8 and "halfcheetah" in self.env_name.lower():
+            feedback = -0.05 * obs[8:14]
+
+        noise = self.rng.normal(0.0, 0.04, size=(self.action_dim,)).astype(np.float32)
+        return np.clip(base_act + feedback + noise, -1.0, 1.0)
+
+
 class HeuristicPolicy:
     """Heuristic / Sinusoidal Oscillatory Controller for continuous locomotion data generation."""
 
