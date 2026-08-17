@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 # Standard D4RL Reference Scores (random / expert) for benchmark environments
 D4RL_REF_SCORES: dict[str, tuple[float, float]] = {
     "HalfCheetah-v4": (-281.0, 12135.0),
+    "HalfCheetah-v5": (-281.0, 12135.0),
     "halfcheetah": (-281.0, 12135.0),
     "Ant-v4": (-325.0, 4700.0),
+    "Ant-v5": (-325.0, 4700.0),
     "ant": (-325.0, 4700.0),
     "Humanoid-v4": (123.0, 6000.0),
+    "Humanoid-v5": (123.0, 6000.0),
     "humanoid": (123.0, 6000.0),
 }
 
@@ -48,7 +51,7 @@ def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
 def evaluate_policy(
     model: nn.Module,
     model_type: str,
-    env_name: str = "HalfCheetah-v4",
+    env_name: str = "HalfCheetah-v5",
     num_episodes: int = 5,
     context_length: int = 20,
     target_return: float = 4000.0,
@@ -209,13 +212,20 @@ def evaluate_policy(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark HDML against SOTA baseline paradigms.")
-    parser.add_argument("--config", type=str, default="configs/halfcheetah_v4_default.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v4/best_model.pt", help="Path to trained HDML checkpoint")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per evaluation")
     parser.add_argument("--device", type=str, default="cuda", help="Execution device")
     args = parser.parse_args()
 
-    cfg = HDMLConfig.from_yaml(args.config)
+    cfg_path = args.config
+    ckpt_path = args.checkpoint
+    if not Path(cfg_path).exists() and Path("configs/halfcheetah_v4_default.yaml").exists():
+        cfg_path = "configs/halfcheetah_v4_default.yaml"
+    if not Path(ckpt_path).exists() and Path("checkpoints/halfcheetah_v4/best_model.pt").exists():
+        ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
+
+    cfg = HDMLConfig.from_yaml(cfg_path)
     device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
     logger.info(f"Execution hardware: {device}")
 
@@ -223,9 +233,9 @@ def main() -> None:
     hdml_model = HDMLModel.from_config(cfg.model).to(device)
     state_mean = None
     state_std = None
-    if Path(args.checkpoint).exists():
-        logger.info(f"Loading trained HDML checkpoint: {args.checkpoint}")
-        ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    if Path(ckpt_path).exists():
+        logger.info(f"Loading trained HDML checkpoint: {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
         hdml_model.load_state_dict(ckpt["model_state_dict"])
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
