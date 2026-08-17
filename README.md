@@ -16,9 +16,9 @@ By unifying **Selective State Space Models (Mamba / S6)** with **Closed-Form Con
 
 ## Simulation Rollouts (Hardware EGL Accelerated)
 
-| Ant-v4 (Decoupled 10Hz/100Hz Macro Planning) | HalfCheetah-v4 (50,000 Step Dataset Rollout) |
+| Ant-v5 (Decoupled 10Hz/100Hz Macro Planning) | HalfCheetah-v5 (50,000 Step Dataset Rollout) |
 | :---: | :---: |
-| ![Ant-v4 HDML Rollout](videos/hdml_ant_v4_rollout.gif) | ![HalfCheetah-v4 HDML Rollout](videos/hdml_halfcheetah_v4_rollout.gif) |
+| ![Ant-v5 HDML Rollout](videos/hdml_ant_v4_rollout.gif) | ![HalfCheetah-v5 HDML Rollout](videos/hdml_halfcheetah_v4_rollout.gif) |
 | *Smooth Continuous Torque Flow (Jerk: 0.0042)* | *Perturbation Robust Locomotion (Jerk: 0.0472)* |
 
 ---
@@ -28,7 +28,7 @@ By unifying **Selective State Space Models (Mamba / S6)** with **Closed-Form Con
 ## Action Waveforms & Mechanical Chatter Comparison
 
 ![Mechanical Actuation Waveforms](plots/action_waveforms.png)
-*Figure 1: Closed-loop continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^3 a_t\|^2$ on log scale (bottom) on HalfCheetah-v4. Decision Transformer exhibits high-frequency discrete token chattering (Jerk $\approx 0.23$), Diffusion Policy exhibits noisy denoising spikes (Jerk $\approx 1.50$), while HDML outputs smooth continuous-time ODE trajectories.*
+*Figure 1: Closed-loop continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^3 a_t\|^2$ on log scale (bottom) on HalfCheetah-v5. Decision Transformer exhibits high-frequency discrete token chattering (Jerk $\approx 0.23$), Diffusion Policy exhibits noisy denoising spikes (Jerk $\approx 1.50$), while HDML outputs smooth continuous-time ODE trajectories.*
 
 ---
 
@@ -79,9 +79,9 @@ HDML addresses these limitations through a **two-tier hierarchical decoupling**:
 
 ## Empirical SOTA Benchmark Results
 
-All experiments were executed on active hardware (**NVIDIA GeForce RTX 4070 SUPER 12GB**, CUDA 13.2, PyTorch 2.13 with AMP BFloat16) comparing HDML against the 3 leading paradigms in Offline RL & Continuous Control:
+All experiments were executed on active hardware (**NVIDIA GeForce RTX 4070 SUPER 12GB**, CUDA 13.2, PyTorch 2.13 with AMP BFloat16) comparing HDML against the 3 leading paradigms in Offline RL & Continuous Control on modern **Gymnasium v5** benchmarks:
 
-### 1. Ant-v4 (50,000 Step Dataset Benchmark)
+### 1. Ant-v5 (50,000 Step Dataset Benchmark)
 
 | Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^3 a_t$ (Lower = Smoother) | D4RL Normalized Score | Perturbation Survival % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -92,7 +92,7 @@ All experiments were executed on active hardware (**NVIDIA GeForce RTX 4070 SUPE
 | Decision RNN (LSTM Recurrent Policy) | 878,088 | 979.3 Hz | 1.021 ms | 0.0021 | 25.90 | 100.0% |
 | MLP-BC (Standard Feedforward Reactive) | 75,272 | 3,269.1 Hz | 0.306 ms | 0.0007 | 25.98 | 100.0% |
 
-### 2. Multi-Seed Statistical Ablation Study (5 Random Seeds on HalfCheetah-v4)
+### 2. Multi-Seed Statistical Ablation Study (5 Random Seeds on HalfCheetah-v5)
 
 | Architecture / Model Variant | Complexity (Time/Mem) | Frequency (Hz) $\uparrow$ | Step Latency (ms) $\downarrow$ | Jerk Metric $\Delta^3 a_t \downarrow$ | D4RL Score $\uparrow$ |
 | :--- | :---: | :---: | :---: | :---: | :---: |

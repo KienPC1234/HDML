@@ -17,8 +17,8 @@ from hdml.utils.config import HDMLConfig
 
 
 def generate_waveforms(
-    config_path: str = "configs/halfcheetah_v4_default.yaml",
-    checkpoint_path: str = "checkpoints/halfcheetah_v4/best_model.pt",
+    config_path: str = "configs/halfcheetah_v5_default.yaml",
+    checkpoint_path: str = "checkpoints/halfcheetah_v5/best_model.pt",
     num_steps: int = 120,
     joint_idx: int = 0,
     device_str: str = "cuda",
@@ -27,6 +27,11 @@ def generate_waveforms(
 ) -> None:
     """Simulate rollouts and plot publication-quality action/torque waveforms and jerk profiles."""
     device = torch.device(device_str if torch.cuda.is_available() and device_str == "cuda" else "cpu")
+    if not Path(config_path).exists() and Path("configs/halfcheetah_v4_default.yaml").exists():
+        config_path = "configs/halfcheetah_v4_default.yaml"
+    if not Path(checkpoint_path).exists() and Path("checkpoints/halfcheetah_v4/best_model.pt").exists():
+        checkpoint_path = "checkpoints/halfcheetah_v4/best_model.pt"
+
     cfg = HDMLConfig.from_yaml(config_path)
 
     Path(output_png).parent.mkdir(parents=True, exist_ok=True)
@@ -253,7 +258,7 @@ def generate_waveforms(
 
     ax1.set_ylabel(f"Continuous Torque Command $a_t^{{({joint_idx})}} \in [-1, 1]$", fontsize=12, fontweight="bold")
     ax1.set_title(
-        "Mechanical Actuation Waveforms & Torque Chatter Comparison (HalfCheetah-v4 Joint 0)",
+        "Mechanical Actuation Waveforms & Torque Chatter Comparison (HalfCheetah-v5 Joint 0)",
         fontsize=14,
         fontweight="bold",
         pad=12,
@@ -293,8 +298,8 @@ def generate_waveforms(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot publication action waveforms and jerk profiles.")
-    parser.add_argument("--config", type=str, default="configs/halfcheetah_v4_default.yaml")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v4/best_model.pt")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
     parser.add_argument("--steps", type=int, default=120)
     parser.add_argument("--joint", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda")

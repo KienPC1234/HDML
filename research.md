@@ -298,7 +298,7 @@ In modern Offline Reinforcement Learning (Offline RL) and continuous robotic loc
 
 All models were evaluated on active hardware under identical conditions on both standard continuous rollouts and stochastic perturbation regimes (random force impulses $F \sim \mathcal{U}(-0.6, 0.6)$ and continuous Gaussian sensor noise $\sigma = 0.05$).
 
-#### Table 1: Comparative Evaluation on Ant-v4 (50,000 Step Benchmark)
+#### Table 1: Comparative Evaluation on Ant-v5 (50,000 Step Benchmark)
 
 | Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^3 a_t$ (Lower = Smoother) | D4RL Normalized Score | Perturbation Survival % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -309,7 +309,7 @@ All models were evaluated on active hardware under identical conditions on both 
 | Decision RNN (LSTM Recurrent Policy) | 878,088 | 979.3 Hz | 1.021 ms | 0.0021 | 25.90 | 100.0% |
 | MLP-BC (Standard Feedforward Reactive) | 75,272 | 3,269.1 Hz | 0.306 ms | 0.0007 | 25.98 | 100.0% |
 
-#### Table 2: Comparative Evaluation on HalfCheetah-v4 (50,000 Step Benchmark)
+#### Table 2: Comparative Evaluation on HalfCheetah-v5 (50,000 Step Benchmark)
 
 | Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^3 a_t$ | Standard D4RL Score | Perturbation Survival % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -323,7 +323,7 @@ All models were evaluated on active hardware under identical conditions on both 
 ### 6.2. Action Waveform Analysis & Mechanical Torque Smoothness
 
 ![Mechanical Actuation Waveforms](plots/action_waveforms.png)
-*Figure 4: Detailed comparison of continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^3 a_t\|^2$ on log scale (bottom) across $120$ timesteps on HalfCheetah-v4. Decision Transformer exhibits high-frequency discrete token chattering (Jerk $\approx 0.23$), Diffusion Policy exhibits noisy denoising spikes (Jerk $\approx 1.50$), while HDML maintains smooth, continuous-time ODE trajectories with low-pass mechanical damping.*
+*Figure 4: Detailed comparison of continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^3 a_t\|^2$ on log scale (bottom) across $120$ timesteps on HalfCheetah-v5. Decision Transformer exhibits high-frequency discrete token chattering (Jerk $\approx 0.23$), Diffusion Policy exhibits noisy denoising spikes (Jerk $\approx 1.50$), while HDML maintains smooth, continuous-time ODE trajectories with low-pass mechanical damping.*
 
 ### 6.3. Multi-Seed Statistical Ablation Study (5 Random Seeds)
 
@@ -332,7 +332,7 @@ To rigorously dissect the individual contributions of the **Selective State Spac
 1. **Ablation A: `Mamba + MLP Head`** (Isolating the Mamba Backbone): Discards the Liquid head in favor of standard multi-layer feedforward layers.
 2. **Ablation B: `Transformer + Liquid Head`** (Isolating the Liquid Head): Replaces the Mamba backbone with a standard Causal Transformer Encoder.
 
-#### Table 3: Multi-Seed Statistical Ablation on HalfCheetah-v4 ($5$ Random Seeds, $\text{Mean} \pm \text{Std}$)
+#### Table 3: Multi-Seed Statistical Ablation on HalfCheetah-v5 ($5$ Random Seeds, $\text{Mean} \pm \text{Std}$)
 
 | Architecture / Model Variant | Complexity (Time/Mem) | Control Frequency (Hz) $\uparrow$ | Step Latency (ms) $\downarrow$ | Jerk Metric $\Delta^3 a_t \downarrow$ | D4RL Score $\uparrow$ |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -346,7 +346,7 @@ To rigorously dissect the individual contributions of the **Selective State Spac
 ### 6.4. Scientific Significance & Publication Readiness
 
 1. **Resolution of the Chattering-Latency Dilemma**: While Diffusion Policies yield expressive multi-modal action densities, their iterative denoising mechanism is inherently non-real-time ($< 15$ Hz end-to-end on full control loops) and exhibits severe actuator jerk ($1.4985$). Conversely, Decision Transformers generate discrete token steps causing motor chatter ($0.2276$). HDML solves continuous-time ODE dynamics in closed form, guaranteeing ultra-smooth torque transitions ($0.0038$) at high edge throughput ($> 340$ Hz).
-2. **Contractive Disturbance Rejection**: Under unexpected mechanical force impulses and sensor noise, HDML maintains $100\%$ survival without trajectory divergence, outperforming Diffusion Policy which suffers stability loss ($0\%$ survival on Ant-v4 perturbation).
+2. **Contractive Disturbance Rejection**: Under unexpected mechanical force impulses and sensor noise, HDML maintains $100\%$ survival without trajectory divergence, outperforming Diffusion Policy which suffers stability loss ($0\%$ survival on Ant-v5 perturbation).
 3. **Linear Algorithmic Complexity**: HDML requires constant $\mathcal{O}(1)$ state memory during rollouts, bypassing the $\mathcal{O}(N)$ KV Cache footprint of Transformer attention.
 
 ---

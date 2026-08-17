@@ -1,0 +1,41 @@
+model:
+  prop_dim: 27
+  action_dim: 8
+  d_model: 128
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  num_mamba_layers: 3
+  d_subgoal: 64
+  cfc_units: 32
+  cfc_backbone_units: 64
+  cfc_backbone_layers: 1
+  use_visual: false
+  dropout: 0.1
+  device: "cuda"
+
+training:
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  warmup_steps: 200
+  max_epochs: 10
+  batch_size: 32
+  context_length: 20
+  gamma: 0.99
+  grad_clip_norm: 1.0
+  action_loss_weight: 1.0
+  subgoal_loss_weight: 0.1
+  reg_loss_weight: 0.01
+  eval_interval: 2
+  save_interval: 5
+  seed: 42
+  output_dir: "checkpoints/ant_v5"
+  log_dir: "logs/ant_v5"
+
+env:
+  env_name: "Ant-v5"
+  max_episode_steps: 1000
+  target_return: 3000.0
+  scale_return: 1000.0
+  num_eval_episodes: 5
+  seed: 42

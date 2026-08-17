@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 def record_episode_video(
     model: torch.nn.Module,
-    env_name: str = "Ant-v4",
+    env_name: str = "Ant-v5",
     checkpoint_path: str | None = None,
-    output_path: str = "videos/hdml_ant_v4.gif",
+    output_path: str = "videos/hdml_ant_v5_rollout.gif",
     max_steps: int = 500,
     macro_interval: int = 5,
     with_perturbations: bool = False,
@@ -154,7 +154,7 @@ def record_episode_video(
 
     # Save animation (GIF or MP4)
     if out_path.suffix.lower() == ".gif":
-        imageio.mimsave(out_path, frames[::2], fps=25, loop=0)
+        imageio.mimsave(out_path, frames[::2], duration=40, loop=0)
     else:
         imageio.mimsave(out_path, frames, fps=30)
 
@@ -177,9 +177,9 @@ def record_episode_video(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render and record MuJoCo simulation video animation.")
-    parser.add_argument("--config", type=str, default="configs/ant_v4_default.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/ant_v4/best_model.pt", help="Path to checkpoint")
-    parser.add_argument("--output", type=str, default="videos/hdml_ant_v4_rollout.gif", help="Output video or GIF path")
+    parser.add_argument("--config", type=str, default="configs/ant_v5_default.yaml", help="Path to config YAML")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/ant_v5/best_model.pt", help="Path to checkpoint")
+    parser.add_argument("--output", type=str, default="videos/hdml_ant_v5_rollout.gif", help="Output video or GIF path")
     parser.add_argument("--steps", type=int, default=300, help="Number of steps to record")
     parser.add_argument("--macro-interval", type=int, default=5, help="Macro-planning interval")
     parser.add_argument("--perturbations", action="store_true", default=False, help="Enable physical force perturbations")

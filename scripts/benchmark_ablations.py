@@ -25,8 +25,11 @@ def compute_d4rl_score(raw_score: float, env_name: str) -> float:
     """Standard D4RL normalized score calculation."""
     d4rl_bounds: dict[str, tuple[float, float]] = {
         "HalfCheetah-v4": (-280.0, 12200.0),
+        "HalfCheetah-v5": (-280.0, 12200.0),
         "Ant-v4": (-325.0, 4800.0),
+        "Ant-v5": (-325.0, 4800.0),
         "Humanoid-v4": (120.0, 6000.0),
+        "Humanoid-v5": (120.0, 6000.0),
     }
     r_min, r_max = d4rl_bounds.get(env_name, (-100.0, 1000.0))
     score = (raw_score - r_min) / (r_max - r_min) * 100.0
@@ -343,13 +346,20 @@ def run_multi_seed_benchmark(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-seed statistical ablation benchmark.")
-    parser.add_argument("--config", type=str, default="configs/halfcheetah_v4_default.yaml")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v4/best_model.pt")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
+    cfg_path = args.config
+    ckpt_path = args.checkpoint
+    if not Path(cfg_path).exists() and Path("configs/halfcheetah_v4_default.yaml").exists():
+        cfg_path = "configs/halfcheetah_v4_default.yaml"
+    if not Path(ckpt_path).exists() and Path("checkpoints/halfcheetah_v4/best_model.pt").exists():
+        ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
+
     run_multi_seed_benchmark(
-        config_path=args.config,
-        checkpoint_path=args.checkpoint,
+        config_path=cfg_path,
+        checkpoint_path=ckpt_path,
         device_str=args.device,
     )

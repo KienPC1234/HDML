@@ -11,15 +11,20 @@ from scripts.record_video import record_episode_video
 
 
 def test_record_halfcheetah_video() -> None:
-    cfg = HDMLConfig.from_yaml("configs/halfcheetah_v4_default.yaml")
+    cfg_path = "configs/halfcheetah_v5_default.yaml"
+    if not Path(cfg_path).exists():
+        cfg_path = "configs/halfcheetah_v4_default.yaml"
+    cfg = HDMLConfig.from_yaml(cfg_path)
     model = HDMLModel.from_config(cfg.model)
     
-    ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
-    out_video = "videos/hdml_halfcheetah_v4_rollout.gif"
+    ckpt_path = "checkpoints/halfcheetah_v5/best_model.pt"
+    if not Path(ckpt_path).exists():
+        ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
+    out_video = "videos/hdml_halfcheetah_v5_rollout.gif"
     
     res = record_episode_video(
         model=model,
-        env_name="HalfCheetah-v4",
+        env_name="HalfCheetah-v5",
         checkpoint_path=ckpt_path if Path(ckpt_path).exists() else None,
         output_path=out_video,
         max_steps=500,

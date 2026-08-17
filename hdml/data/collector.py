@@ -36,7 +36,7 @@ class MediumExpertLocomotionPolicy:
     Generates high-return expert & medium-expert locomotion trajectories for D4RL MuJoCo benchmarks.
     """
 
-    def __init__(self, action_dim: int, env_name: str = "HalfCheetah-v4", seed: int = 42) -> None:
+    def __init__(self, action_dim: int, env_name: str = "HalfCheetah-v5", seed: int = 42) -> None:
         self.action_dim = action_dim
         self.env_name = env_name
         self.rng = np.random.default_rng(seed)
@@ -93,7 +93,7 @@ class TrajectoryCollector:
 
     def __init__(
         self,
-        env_name: str = "Ant-v4",
+        env_name: str = "Ant-v5",
         gamma: float = 0.99,
         seed: int = 42,
     ) -> None:

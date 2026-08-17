@@ -12,13 +12,19 @@ from hdml.utils.config import HDMLConfig
 
 
 def test_train_halfcheetah_fast() -> None:
-    cfg = HDMLConfig.from_yaml("configs/halfcheetah_v4_default.yaml")
+    cfg_path = "configs/halfcheetah_v5_default.yaml"
+    if not Path(cfg_path).exists():
+        cfg_path = "configs/halfcheetah_v4_default.yaml"
+    cfg = HDMLConfig.from_yaml(cfg_path)
     cfg.training.max_epochs = 2
     cfg.training.batch_size = 32
     cfg.training.use_amp = True
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    trajectories = TrajectoryCollector.load_dataset("data/halfcheetah_v4_trajectories.npz")
+    data_path = "data/halfcheetah_v5_trajectories.npz"
+    if not Path(data_path).exists():
+        data_path = "data/halfcheetah_v4_trajectories.npz"
+    trajectories = TrajectoryCollector.load_dataset(data_path)
     
     train_ds = FastTensorTrajectoryDataset(
         trajectories=trajectories[:4],

@@ -22,7 +22,7 @@ def test_discount_cumsum() -> None:
 
 
 def test_trajectory_collector_save_load(tmp_path: Path) -> None:
-    collector = TrajectoryCollector(env_name="Ant-v4", seed=42)
+    collector = TrajectoryCollector(env_name="Ant-v5", seed=42)
     # Collect small trajectory set
     trajs = collector.collect_trajectories(num_episodes=2, max_steps=10)
     assert len(trajs) == 2
