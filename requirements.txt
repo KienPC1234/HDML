@@ -1,0 +1,47 @@
+# ==============================================================================
+# HDML (Hierarchical Decision Mamba-Liquid) Project Dependencies
+# ==============================================================================
+
+# --- 1. PyTorch Core & GPU Acceleration ---
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
+triton>=2.2.0
+ninja>=1.11.1
+packaging>=23.2
+
+# --- 2. State Space Models (Mamba & S6 / Mamba2) ---
+# Note: Install with --no-build-isolation flag to compile against host CUDA
+causal-conv1d>=1.4.0
+mamba-ssm>=2.0.0
+einops>=0.7.0
+
+# --- 3. Liquid Neural Networks & Brain Dynamics ---
+ncps>=0.0.8
+
+# --- 4. Reinforcement Learning & 3D Robotics Simulation ---
+gymnasium[mujoco]>=0.29.1
+mujoco>=3.1.0
+minari>=0.4.0
+torchrl>=0.3.0
+tensordict>=0.3.0
+
+# --- 5. Vision & Cross-Modal Feature Encoding ---
+timm>=0.9.16
+opencv-python-headless>=4.9.0.80
+scikit-image>=0.22.0
+
+# --- 6. Edge Deployment & Model Export ---
+onnx>=1.15.0
+onnxruntime-gpu>=1.17.0
+
+# --- 7. Experiment Tracking, Data & Utilities ---
+numpy>=1.26.0,<2.0.0
+scipy>=1.12.0
+pandas>=2.2.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+tqdm>=4.66.0
+pyyaml>=6.0.1
+wandb>=0.16.0
+tensorboard>=2.16.0
