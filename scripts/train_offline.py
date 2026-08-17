@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-amp", action="store_false", dest="amp", help="Disable AMP")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader worker processes")
     parser.add_argument("--fast-data", action="store_true", default=True, help="Use pre-vectorized contiguous tensor dataset")
+    parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases cloud logging")
+    parser.add_argument("--wandb-project", type=str, default="hdml-robotics", help="WandB project name")
+    parser.add_argument("--wandb-name", type=str, default=None, help="WandB experiment run name")
+    parser.add_argument("--tensorboard", action="store_true", default=True, help="Enable local TensorBoard logging")
+    parser.add_argument("--no-tensorboard", action="store_false", dest="tensorboard", help="Disable TensorBoard logging")
     return parser.parse_args()
 
 
@@ -44,6 +49,10 @@ def main() -> None:
         cfg.training.learning_rate = args.lr
     cfg.training.use_amp = args.amp
     cfg.training.num_workers = args.num_workers
+    cfg.training.use_tensorboard = args.tensorboard
+    cfg.training.use_wandb = args.wandb
+    cfg.training.wandb_project = args.wandb_project
+    cfg.training.wandb_run_name = args.wandb_name
 
     device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
     logger.info(f"Target execution hardware: {device}")

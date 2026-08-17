@@ -53,6 +53,10 @@ class TrainingConfig:
     pin_memory: bool = True
     persistent_workers: bool = True
     use_fast_dataset: bool = True
+    use_tensorboard: bool = True
+    use_wandb: bool = False
+    wandb_project: str = "hdml-robotics"
+    wandb_run_name: str | None = None
     output_dir: str = "checkpoints/ant_v4"
     log_dir: str = "logs/ant_v4"
 
