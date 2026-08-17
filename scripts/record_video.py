@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 def record_episode_video(
     model: torch.nn.Module,
-    env_name: str = "Ant-v5",
+    env_name: str = "Ant-v4",
     checkpoint_path: str | None = None,
-    output_path: str = "videos/hdml_ant_v5_rollout.gif",
+    output_path: str = "videos/hdml_ant_v4.gif",
     max_steps: int = 500,
     macro_interval: int = 5,
     with_perturbations: bool = False,
@@ -47,28 +47,9 @@ def record_episode_video(
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
 
-    # For Ant-v5: by default the env returns 105-dim obs (with contact forces).
-    # If the model's prop_dim is 27 (no contact forces), recreate with use_contact_forces=False.
-    _tmp_env = gym.make(env_name, render_mode="rgb_array")
-    act_dim: int = _tmp_env.action_space.shape[0]  # type: ignore
-    raw_obs_dim: int = _tmp_env.observation_space.shape[0]  # type: ignore
-    _tmp_env.close()
-
-    # Detect model expected prop_dim from the fusion layer
-    model_prop_dim: int = getattr(model, "prop_dim", raw_obs_dim)
-    if hasattr(model, "fusion"):
-        model_prop_dim = getattr(model.fusion, "prop_dim", model_prop_dim)
-
-    if "Ant" in env_name and model_prop_dim != raw_obs_dim:
-        logger.info(
-            f"Ant-v5 obs mismatch: env={raw_obs_dim}, model={model_prop_dim}. "
-            f"Recreating env with include_cfrc_ext_in_observation=False."
-        )
-        env = gym.make(env_name, render_mode="rgb_array", include_cfrc_ext_in_observation=False)
-    else:
-        env = gym.make(env_name, render_mode="rgb_array")
-
-    obs_dim: int = env.observation_space.shape[0]  # type: ignore
+    env = gym.make(env_name, render_mode="rgb_array")
+    obs_dim = env.observation_space.shape[0]  # type: ignore
+    act_dim = env.action_space.shape[0]        # type: ignore
 
     st_mean = state_mean if state_mean is not None else np.zeros(obs_dim, dtype=np.float32)
     st_std = state_std if state_std is not None else np.ones(obs_dim, dtype=np.float32)
@@ -90,6 +71,7 @@ def record_episode_video(
     context_length = 20
     cfc_hx = None
     current_subgoal = None
+    prev_action = np.zeros(act_dim, dtype=np.float32)
 
     logger.info(f"Recording video on {env_name} (Max Steps={max_steps}, Macro Interval={macro_interval})...")
 
@@ -109,8 +91,7 @@ def record_episode_video(
         history_states.append(norm_obs)
         history_rtgs.append(scaled_rtg)
         history_timesteps.append(t)
-        if len(history_actions) == 0:
-            history_actions.append(np.zeros(act_dim, dtype=np.float32))
+        history_actions.append(prev_action.copy())
 
         # Two-tier execution
         if t % macro_interval == 0 or current_subgoal is None:
@@ -138,25 +119,20 @@ def record_episode_video(
             t_time = torch.from_numpy(inp_time).unsqueeze(0).to(dev)
 
             with torch.inference_mode():
-                action_tensor, cfc_hx, info = model.get_action(
+                action_tensor, cfc_hx, current_subgoal = model.get_action(
                     states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=cfc_hx
                 )
-                current_subgoal = info["subgoal"]
         else:
             t_prop = torch.from_numpy(norm_obs).unsqueeze(0).to(dev)
-            t_rtg = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=dev)
             with torch.inference_mode():
-                action_tensor, cfc_hx = model.act_from_subgoal(
-                    subgoal=current_subgoal, current_prop=t_prop, rtg=t_rtg, hx=cfc_hx
+                action_tensor, cfc_hx = model.liquid_head(
+                    subgoals=current_subgoal, current_prop=t_prop, hx=cfc_hx
                 )
 
-        if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
-            action = action_tensor[0, 0, :].cpu().numpy().astype(np.float32)
-        else:  # (B, action_dim)
-            action = action_tensor[0, :].cpu().numpy().astype(np.float32)
-            
+        action = action_tensor.squeeze(0).cpu().numpy().astype(np.float32)
         action = np.clip(action, -1.0, 1.0)
-        history_actions.append(action)
+        prev_action = action.copy()
+        history_actions[-1] = action
 
         exec_action = action
         if force_perturb is not None:
@@ -178,7 +154,7 @@ def record_episode_video(
 
     # Save animation (GIF or MP4)
     if out_path.suffix.lower() == ".gif":
-        imageio.mimsave(out_path, frames[::2], duration=40, loop=0)
+        imageio.mimsave(out_path, frames[::2], fps=25, loop=0)
     else:
         imageio.mimsave(out_path, frames, fps=30)
 
@@ -201,9 +177,9 @@ def record_episode_video(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render and record MuJoCo simulation video animation.")
-    parser.add_argument("--config", type=str, default="configs/ant_v5_default.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/ant_v5/best_model.pt", help="Path to checkpoint")
-    parser.add_argument("--output", type=str, default="videos/hdml_ant_v5_rollout.gif", help="Output video or GIF path")
+    parser.add_argument("--config", type=str, default="configs/ant_v4_default.yaml", help="Path to config YAML")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/ant_v4/best_model.pt", help="Path to checkpoint")
+    parser.add_argument("--output", type=str, default="videos/hdml_ant_v4_rollout.gif", help="Output video or GIF path")
     parser.add_argument("--steps", type=int, default=300, help="Number of steps to record")
     parser.add_argument("--macro-interval", type=int, default=5, help="Macro-planning interval")
     parser.add_argument("--perturbations", action="store_true", default=False, help="Enable physical force perturbations")

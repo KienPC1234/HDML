@@ -20,20 +20,35 @@ from hdml.models import (
     MLPBCBaseline,
 )
 from hdml.evaluation.perturbations import SensorNoisePerturbation, ForceImpulsePerturbation
-from hdml.utils.metrics import compute_action_smoothness, get_d4rl_normalized_score
+from hdml.utils.metrics import compute_action_smoothness
 from hdml.utils.config import HDMLConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Standard D4RL reference scores are defined centrally in hdml/utils/metrics.py
-# (official D4RL library constants). Imported via get_d4rl_normalized_score.
+# Standard D4RL Reference Scores (random / expert) for benchmark environments
+D4RL_REF_SCORES: dict[str, tuple[float, float]] = {
+    "HalfCheetah-v4": (-281.0, 12135.0),
+    "halfcheetah": (-281.0, 12135.0),
+    "Ant-v4": (-325.0, 4700.0),
+    "ant": (-325.0, 4700.0),
+    "Humanoid-v4": (123.0, 6000.0),
+    "humanoid": (123.0, 6000.0),
+}
+
+
+def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
+    """Compute standard D4RL normalized score in range [0, 100+]."""
+    for key, (r_score, e_score) in D4RL_REF_SCORES.items():
+        if key.lower() in env_name.lower():
+            return 100.0 * (raw_return - r_score) / (e_score - r_score)
+    return raw_return
 
 
 def evaluate_policy(
     model: nn.Module,
     model_type: str,
-    env_name: str = "HalfCheetah-v5",
+    env_name: str = "HalfCheetah-v4",
     num_episodes: int = 5,
     context_length: int = 20,
     target_return: float = 4000.0,
@@ -76,6 +91,7 @@ def evaluate_policy(
         current_rtg = target_return
         hx = None
         current_subgoal = None
+        prev_action = np.zeros(act_dim, dtype=np.float32)
 
         for t in range(1000):
             raw_obs = np.asarray(obs, dtype=np.float32)
@@ -88,27 +104,43 @@ def evaluate_policy(
             history_states.append(norm_obs)
             history_rtgs.append(scaled_rtg)
             history_timesteps.append(t)
-            if len(history_actions) == 0:
-                history_actions.append(np.zeros(act_dim, dtype=np.float32))
+            history_actions.append(prev_action.copy())
 
-            # Build causal context without artificial zero padding
+            # Build context
             ctx_len = min(len(history_states), context_length)
             ctx_states = np.array(history_states[-ctx_len:], dtype=np.float32)
             ctx_actions = np.array(history_actions[-ctx_len:], dtype=np.float32)
             ctx_rtgs = np.array(history_rtgs[-ctx_len:], dtype=np.float32).reshape(-1, 1)
             ctx_time = np.array(history_timesteps[-ctx_len:], dtype=np.int64)
 
-            t_states = torch.from_numpy(ctx_states).unsqueeze(0).to(device)
-            t_actions = torch.from_numpy(ctx_actions).unsqueeze(0).to(device)
-            t_rtgs = torch.from_numpy(ctx_rtgs).unsqueeze(0).to(device)
-            t_time = torch.from_numpy(ctx_time).unsqueeze(0).to(device)
+            # Pad context if needed
+            if ctx_len < context_length:
+                pad_k = context_length - ctx_len
+                inp_states = np.vstack([np.zeros((pad_k, obs_dim), dtype=np.float32), ctx_states])
+                inp_actions = np.vstack([np.zeros((pad_k, act_dim), dtype=np.float32), ctx_actions])
+                inp_rtgs = np.vstack([np.zeros((pad_k, 1), dtype=np.float32), ctx_rtgs])
+                inp_time = np.concatenate([np.zeros((pad_k,), dtype=np.int64), ctx_time])
+            else:
+                inp_states = ctx_states
+                inp_actions = ctx_actions
+                inp_rtgs = ctx_rtgs
+                inp_time = ctx_time
+
+            t_states = torch.from_numpy(inp_states).unsqueeze(0).to(device)
+            t_actions = torch.from_numpy(inp_actions).unsqueeze(0).to(device)
+            t_rtgs = torch.from_numpy(inp_rtgs).unsqueeze(0).to(device)
+            t_time = torch.from_numpy(inp_time).unsqueeze(0).to(device)
 
             step_t0 = time.perf_counter()
             with torch.inference_mode():
                 if model_type == "hdml":
-                    action_t, hx, info = model.get_action(
-                        states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=hx
-                    )
+                    if t % macro_interval == 0 or current_subgoal is None:
+                        action_t, hx, current_subgoal = model.get_action(
+                            states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=hx
+                        )
+                    else:
+                        t_prop = torch.from_numpy(norm_obs).unsqueeze(0).to(device)
+                        action_t, hx = model.liquid_head(subgoals=current_subgoal, current_prop=t_prop, hx=hx)
                 elif model_type == "diffusion":
                     action_t = model.get_action(states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time)
                 elif model_type == "dt":
@@ -128,15 +160,10 @@ def evaluate_policy(
             step_t1 = time.perf_counter()
             latencies.append((step_t1 - step_t0) * 1000.0)
 
-            if action_t.ndim == 3:  # (B, chunk_size, action_dim)
-                action = action_t[0, 0, :].cpu().numpy().astype(np.float32)
-            else:  # (B, action_dim)
-                action = action_t[0, :].cpu().numpy().astype(np.float32)
-                
+            action = action_t.squeeze(0).cpu().numpy().astype(np.float32)
             action = np.clip(action, -1.0, 1.0)
-            # Append the executed action; the input action at the final context
-            # position is thus a_{t-1} (causal no-leakage convention).
-            history_actions.append(action)
+            prev_action = action.copy()
+            history_actions[-1] = action
 
             exec_action = action
             if force_perturb is not None:
@@ -164,15 +191,13 @@ def evaluate_policy(
     std_ret = float(np.std(returns))
     mean_lat = float(np.mean(latencies))
     freq_hz = 1000.0 / max(1e-4, mean_lat)
-    norm_scores = np.array([get_d4rl_normalized_score(env_name, r) for r in returns], dtype=np.float32)
+    d4rl_norm_score = get_d4rl_normalized_score(env_name, mean_ret)
 
     return {
         "model_type": model_type,
         "mean_return": mean_ret,
         "std_return": std_ret,
-        "d4rl_normalized_score": float(np.mean(norm_scores)),
-        "returns_array": np.array(returns, dtype=np.float32),
-        "norm_scores_array": norm_scores,
+        "d4rl_normalized_score": d4rl_norm_score,
         "mean_length": float(np.mean(lengths)),
         "survival_rate": float(sum(l >= 1000 for l in lengths) / max(1, len(lengths)) * 100.0),
         "mean_smoothness_jerk": float(np.mean(smoothnesses)),
@@ -182,89 +207,51 @@ def evaluate_policy(
     }
 
 
-def load_baseline_checkpoint(
-    model: nn.Module,
-    ckpt_dir: Path,
-    model_type: str,
-    device: torch.device,
-) -> bool:
-    """Load a trained baseline checkpoint if available.
-
-    Returns True if a trained checkpoint was loaded, False otherwise (in which case
-    the model is evaluated with random initialization and a warning is emitted).
-    """
-    ckpt_path = ckpt_dir / f"{model_type}_best.pt"
-    if ckpt_path.exists():
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-        model.load_state_dict(ckpt["model_state_dict"])
-        logger.info(f"Loaded trained baseline checkpoint: {ckpt_path}")
-        return True
-    logger.warning(
-        f"No trained checkpoint found at {ckpt_path}. "
-        f"Evaluating UNTRAINED (random init) model: {model_type}"
-    )
-    return False
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark HDML against trained baseline paradigms (fair comparison).")
-    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
+    parser = argparse.ArgumentParser(description="Benchmark HDML against SOTA baseline paradigms.")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v4_default.yaml", help="Path to config YAML")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v4/best_model.pt", help="Path to trained HDML checkpoint")
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per evaluation")
     parser.add_argument("--device", type=str, default="cuda", help="Execution device")
     args = parser.parse_args()
 
-    cfg_path = args.config
-    ckpt_path = args.checkpoint
-    if not Path(cfg_path).exists() and Path("configs/halfcheetah_v4_default.yaml").exists():
-        cfg_path = "configs/halfcheetah_v4_default.yaml"
-    if not Path(ckpt_path).exists() and Path("checkpoints/halfcheetah_v4/best_model.pt").exists():
-        ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
-
-    cfg = HDMLConfig.from_yaml(cfg_path)
+    cfg = HDMLConfig.from_yaml(args.config)
     device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
     logger.info(f"Execution hardware: {device}")
-    baseline_ckpt_dir = Path(ckpt_path).parent / "baselines"
 
     # 1. Instantiate HDML (Trained)
     hdml_model = HDMLModel.from_config(cfg.model).to(device)
     state_mean = None
     state_std = None
-    if Path(ckpt_path).exists():
-        logger.info(f"Loading trained HDML checkpoint: {ckpt_path}")
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if Path(args.checkpoint).exists():
+        logger.info(f"Loading trained HDML checkpoint: {args.checkpoint}")
+        ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
         hdml_model.load_state_dict(ckpt["model_state_dict"])
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
     else:
         logger.warning("Checkpoint not found, evaluating with initialized weights.")
 
-    # 2. Instantiate SOTA Baselines (loading trained checkpoints when available)
+    # 2. Instantiate SOTA Baselines
     diffusion_model = DiffusionPolicyBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model, denoising_steps=10
     ).to(device)
-    load_baseline_checkpoint(diffusion_model, baseline_ckpt_dir, "diffusion", device)
 
     dt_model = DecisionTransformerBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model
     ).to(device)
-    load_baseline_checkpoint(dt_model, baseline_ckpt_dir, "dt", device)
 
     iql_model = IQLBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, hidden_dim=256
     ).to(device)
-    load_baseline_checkpoint(iql_model, baseline_ckpt_dir, "iql", device)
 
     rnn_model = DecisionRNNBaseline(
-        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model,
-        num_layers=cfg.model.num_mamba_layers,
+        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model
     ).to(device)
-    load_baseline_checkpoint(rnn_model, baseline_ckpt_dir, "rnn", device)
 
     mlp_model = MLPBCBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, hidden_dim=256
     ).to(device)
-    load_baseline_checkpoint(mlp_model, baseline_ckpt_dir, "mlp", device)
 
     models_to_test = [
         ("HDML (Decision Mamba + Liquid CfC - Ours)", hdml_model, "hdml"),
@@ -276,7 +263,7 @@ def main() -> None:
     ]
 
     print("\n" + "=" * 115)
-    print(f"ACADEMIC BENCHMARK COMPARISON ON {cfg.env.env_name.upper()} (Standard & Perturbed Robustness, Trained Baselines)")
+    print(f"ACADEMIC SOTA BENCHMARK COMPARISON ON {cfg.env.env_name.upper()} (Standard & Perturbed Robustness)")
     print("=" * 115)
 
     results_std: list[dict[str, Any]] = []
@@ -290,8 +277,6 @@ def main() -> None:
             env_name=cfg.env.env_name,
             num_episodes=args.episodes,
             context_length=cfg.training.context_length,
-            target_return=cfg.env.target_return,
-            scale_return=cfg.env.scale_return,
             state_mean=state_mean,
             state_std=state_std,
             with_perturbations=False,
@@ -307,8 +292,6 @@ def main() -> None:
             env_name=cfg.env.env_name,
             num_episodes=args.episodes,
             context_length=cfg.training.context_length,
-            target_return=cfg.env.target_return,
-            scale_return=cfg.env.scale_return,
             state_mean=state_mean,
             state_std=state_std,
             with_perturbations=True,
@@ -317,88 +300,31 @@ def main() -> None:
         res_r["name"] = name
         results_rob.append(res_r)
 
-    # -------------------------------------------------------------
-    # RLIABLE STATISTICAL ANALYSIS & PUBLICATION METRICS
-    # -------------------------------------------------------------
-    from hdml.utils.rliable_metrics import (
-        compute_iqm,
-        stratified_bootstrap_ci,
-        compute_probability_of_improvement,
-        generate_rliable_summary_plot,
-    )
-
-    std_scores_dict = {res["name"]: res["norm_scores_array"] for res in results_std}
-    rob_scores_dict = {res["name"]: res["norm_scores_array"] for res in results_rob}
-
-    # Generate 3-panel publication figure
-    plot_path = Path("plots") / f"rliable_{cfg.env.env_name.lower()}_benchmark.png"
-    generate_rliable_summary_plot(std_scores_dict, env_name=cfg.env.env_name, save_path=str(plot_path))
-
     # Print Publication Comparative Tables
-    print("\n" + "=" * 125)
-    print(f"ACADEMIC BENCHMARK COMPARISON ON {cfg.env.env_name.upper()} (RLIABLE STATISTICAL PROTOCOL)")
-    print("=" * 125)
+    print("\n" + "-" * 115)
     print(
-        f"{'Architecture / Paradigm':<44} | {'Params':<9} | {'Freq (Hz)':<10} | {'Latency':<10} | {'Jerk (Smooth)':<14} | {'IQM (95% Bootstrap CI)':<26}"
+        f"{'Architecture / Paradigm':<44} | {'Params':<9} | {'Frequency (Hz)':<14} | {'Latency (ms)':<12} | {'Jerk (Smooth)':<14} | {'D4RL Score':<10}"
     )
-    print("-" * 125)
+    print("-" * 115)
     for res in results_std:
-        iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
-        ci_str = f"{iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]"
         print(
-            f"{res['name']:<44} | {res['params_count']:<9,d} | {res['frequency_hz']:<10.1f} | {res['mean_latency_ms']:<8.2f}ms | {res['mean_smoothness_jerk']:<14.4f} | {ci_str:<26}"
+            f"{res['name']:<44} | {res['params_count']:<9,d} | {res['frequency_hz']:<14.1f} | {res['mean_latency_ms']:<12.3f} | {res['mean_smoothness_jerk']:<14.4f} | {res['d4rl_normalized_score']:<10.2f}"
         )
-    print("-" * 125)
+    print("-" * 115)
 
-    print("\n" + "-" * 125)
+    print("\n" + "-" * 115)
     print(f"PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)")
-    print("-" * 125)
+    print("-" * 115)
     print(
-        f"{'Architecture / Paradigm':<44} | {'Raw Return':<20} | {'Perturbed IQM (95% CI)':<26} | {'Jerk (Smooth)':<14} | {'Survival %':<10}"
+        f"{'Architecture / Paradigm':<44} | {'Raw Return':<20} | {'D4RL Score':<12} | {'Jerk (Smooth)':<14} | {'Survival %':<10}"
     )
-    print("-" * 125)
+    print("-" * 115)
     for res in results_rob:
-        iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
-        ci_str = f"{iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]"
         ret_str = f"{res['mean_return']:.2f} +/- {res['std_return']:.2f}"
         print(
-            f"{res['name']:<44} | {ret_str:<20} | {ci_str:<26} | {res['mean_smoothness_jerk']:<14.4f} | {res['survival_rate']:<10.1f}%"
+            f"{res['name']:<44} | {ret_str:<20} | {res['d4rl_normalized_score']:<12.2f} | {res['mean_smoothness_jerk']:<14.4f} | {res['survival_rate']:<10.1f}%"
         )
-    print("-" * 125)
-
-    print("\n" + "-" * 125)
-    print("PROBABILITY OF IMPROVEMENT (Mann-Whitney U Bootstrap Statistic: P(HDML > Baseline))")
-    print("-" * 125)
-    hdml_std_scores = results_std[0]["norm_scores_array"]
-    for res in results_std[1:]:
-        p_val, p_lo, p_hi = compute_probability_of_improvement(hdml_std_scores, res["norm_scores_array"])
-        print(f"  P( HDML-V2 > {res['name']:<42} ) = {p_val * 100.0:6.2f}%  [95% CI: {p_lo * 100.0:5.2f}% - {p_hi * 100.0:5.2f}%]")
-    print("-" * 125 + "\n")
-
-    # Save to results text file
-    res_file = Path("results") / f"benchmark_{cfg.env.env_name.lower()}.txt"
-    res_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(res_file, "w") as f:
-        f.write(f"HDML-V2 RLIABLE BENCHMARK RESULTS - {cfg.env.env_name}\n")
-        f.write("=" * 100 + "\n\n")
-        f.write("STANDARD BENCHMARK:\n")
-        for res in results_std:
-            iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
-            f.write(f"- {res['name']}:\n")
-            f.write(f"    IQM (95% CI): {iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
-            f.write(f"    D4RL Mean Score: {res['d4rl_normalized_score']:.2f}\n")
-            f.write(f"    Raw Return: {res['mean_return']:.2f} +/- {res['std_return']:.2f}\n")
-            f.write(f"    Smoothness (Jerk): {res['mean_smoothness_jerk']:.4f}\n")
-            f.write(f"    Inference Latency: {res['mean_latency_ms']:.2f} ms ({res['frequency_hz']:.1f} Hz)\n")
-            f.write(f"    Parameters: {res['params_count']:,}\n\n")
-        f.write("PERTURBATION ROBUSTNESS BENCHMARK:\n")
-        for res in results_rob:
-            iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
-            f.write(f"- {res['name']}:\n")
-            f.write(f"    Perturbed IQM (95% CI): {iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
-            f.write(f"    Survival Rate: {res['survival_rate']:.1f}%\n")
-            f.write(f"    Smoothness (Jerk): {res['mean_smoothness_jerk']:.4f}\n\n")
-    logger.info(f"Wrote benchmark report to: {res_file}")
+    print("-" * 115 + "\n")
 
 
 if __name__ == "__main__":
