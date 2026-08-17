@@ -14,10 +14,10 @@ def device() -> torch.device:
 
 
 def test_evaluator_closed_loop_ant(device: torch.device) -> None:
-    # Ant-v4 has prop_dim=27, action_dim=8
+    # HalfCheetah-v5 has prop_dim=17, action_dim=6
     cfg = ModelConfig(
-        prop_dim=27,
-        action_dim=8,
+        prop_dim=17,
+        action_dim=6,
         d_model=64,
         d_subgoal=32,
         cfc_units=16,
@@ -27,7 +27,7 @@ def test_evaluator_closed_loop_ant(device: torch.device) -> None:
 
     evaluator = HDMLEvaluator(
         model=model,
-        env_name="Ant-v4",
+        env_name="HalfCheetah-v5",
         context_length=10,
         target_return=1000.0,
         scale_return=1000.0,
@@ -44,8 +44,8 @@ def test_evaluator_closed_loop_ant(device: torch.device) -> None:
 
 def test_evaluator_with_perturbations(device: torch.device) -> None:
     cfg = ModelConfig(
-        prop_dim=27,
-        action_dim=8,
+        prop_dim=17,
+        action_dim=6,
         d_model=64,
         d_subgoal=32,
         cfc_units=16,
@@ -55,7 +55,7 @@ def test_evaluator_with_perturbations(device: torch.device) -> None:
 
     evaluator = HDMLEvaluator(
         model=model,
-        env_name="Ant-v4",
+        env_name="HalfCheetah-v5",
         context_length=10,
         target_return=1000.0,
         scale_return=1000.0,
@@ -69,8 +69,8 @@ def test_evaluator_with_perturbations(device: torch.device) -> None:
 
 def test_evaluator_hierarchical_macro_interval(device: torch.device) -> None:
     cfg = ModelConfig(
-        prop_dim=27,
-        action_dim=8,
+        prop_dim=17,
+        action_dim=6,
         d_model=64,
         d_subgoal=32,
         cfc_units=16,
@@ -80,7 +80,7 @@ def test_evaluator_hierarchical_macro_interval(device: torch.device) -> None:
 
     evaluator = HDMLEvaluator(
         model=model,
-        env_name="Ant-v4",
+        env_name="HalfCheetah-v5",
         context_length=10,
         target_return=1000.0,
         scale_return=1000.0,

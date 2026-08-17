@@ -19,7 +19,7 @@ class HDMLEvaluator:
     def __init__(
         self,
         model: HDMLModel,
-        env_name: str = "Ant-v4",
+        env_name: str = "Ant-v5",
         context_length: int = 20,
         target_return: float = 5000.0,
         scale_return: float = 1000.0,

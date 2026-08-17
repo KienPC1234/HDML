@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Collect demonstration trajectories for HDML training.")
-    parser.add_argument("--env", type=str, default="HalfCheetah-v4", help="Gymnasium environment ID")
+    parser.add_argument("--env", type=str, default="HalfCheetah-v5", help="Gymnasium environment ID")
     parser.add_argument("--num-episodes", type=int, default=50, help="Number of episodes to collect")
     parser.add_argument("--max-steps", type=int, default=1000, help="Max steps per episode")
     parser.add_argument("--policy-type", type=str, default="medium_expert", choices=["medium_expert", "heuristic"])
-    parser.add_argument("--output", type=str, default="data/halfcheetah_v4_trajectories.npz", help="Output .npz path")
+    parser.add_argument("--output", type=str, default="data/halfcheetah_v5_trajectories.npz", help="Output .npz path")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     return parser.parse_args()
 
