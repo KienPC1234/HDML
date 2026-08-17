@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence, Any
+from typing import Sequence
 import numpy as np
 import torch
 from torch.utils.data import Dataset

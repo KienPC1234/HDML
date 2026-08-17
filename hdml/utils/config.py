@@ -41,6 +41,8 @@ class TrainingConfig:
     action_loss_weight: float = 1.0
     subgoal_loss_weight: float = 0.1
     reg_loss_weight: float = 0.01
+    use_advantage_weighting: bool = False
+    advantage_temperature: float = 1.0
     eval_interval: int = 5
     save_interval: int = 5
     seed: int = 42

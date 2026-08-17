@@ -93,6 +93,8 @@ class HDMLTrainer:
             action_weight=self.config.action_loss_weight,
             subgoal_weight=self.config.subgoal_loss_weight,
             value_weight=self.config.reg_loss_weight,
+            use_advantage_weighting=self.config.use_advantage_weighting,
+            advantage_temperature=self.config.advantage_temperature,
         )
 
         # Learning Rate Schedule
