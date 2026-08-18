@@ -138,17 +138,23 @@ def record_episode_video(
             t_time = torch.from_numpy(inp_time).unsqueeze(0).to(dev)
 
             with torch.inference_mode():
-                action_tensor, cfc_hx, current_subgoal = model.get_action(
+                action_tensor, cfc_hx, info = model.get_action(
                     states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=cfc_hx
                 )
+                current_subgoal = info["subgoal"]
         else:
             t_prop = torch.from_numpy(norm_obs).unsqueeze(0).to(dev)
+            t_rtg = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=dev)
             with torch.inference_mode():
-                action_tensor, cfc_hx = model.liquid_head(
-                    subgoals=current_subgoal, current_prop=t_prop, hx=cfc_hx
+                action_tensor, cfc_hx = model.act_from_subgoal(
+                    subgoal=current_subgoal, current_prop=t_prop, rtg=t_rtg, hx=cfc_hx
                 )
 
-        action = action_tensor.squeeze(0).cpu().numpy().astype(np.float32)
+        if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
+            action = action_tensor[0, 0, :].cpu().numpy().astype(np.float32)
+        else:  # (B, action_dim)
+            action = action_tensor[0, :].cpu().numpy().astype(np.float32)
+            
         action = np.clip(action, -1.0, 1.0)
         history_actions.append(action)
 

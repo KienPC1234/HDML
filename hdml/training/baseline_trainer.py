@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 from hdml.utils.config import TrainingConfig
 
@@ -259,7 +260,14 @@ class BaselineTrainer:
             self.model.train()
             epoch_losses: dict[str, float] = {}
             t0 = time.perf_counter()
-            for batch in self.train_loader:
+            batch_bar = tqdm(
+                self.train_loader,
+                desc=f"{self.model_type} Epoch {epoch:02d}",
+                leave=False,
+                unit="batch",
+                dynamic_ncols=True,
+            )
+            for batch in batch_bar:
                 self.optimizer.zero_grad(set_to_none=True)
                 self._adjust_lr()
                 with torch.amp.autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
@@ -281,6 +289,7 @@ class BaselineTrainer:
                 self.current_step += 1
                 for k, v in loss_dict.items():
                     epoch_losses[k] = epoch_losses.get(k, 0.0) + v
+                batch_bar.set_postfix(loss=f"{loss_dict.get('total_loss', float(loss.item())):.3f}")
 
             dt = time.perf_counter() - t0
             metrics = {

@@ -2,17 +2,106 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from ncps.torch import CfC
+
 from hdml.models.fusion import CrossModalFusion
-from hdml.models.backbone import MambaCognitiveBackbone
-from hdml.models.liquid_head import LiquidReactiveControlHead
+from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
+
+
+class _CfCLiquidHead(nn.Module):
+    """Closed-Form Continuous-Time (CfC) single-step action head.
+
+    Maps a latent subgoal plus instantaneous proprioception to a bounded continuous
+    action via an ODE-based CfC cell. Used by the ``TransformerLiquidHeadAblation``
+    to isolate the contribution of the Mamba backbone while retaining the liquid head.
+
+    Shape Contract:
+        Input:
+            subgoals:     (B, T, d_subgoal) or (B, d_subgoal)
+            current_prop: (B, T, prop_dim)  or (B, prop_dim)
+        Output:
+            actions:  (B, T, action_dim) or (B, action_dim), bounded in [-1, 1]
+            next_hx:  CfC hidden state
+    """
+
+    def __init__(
+        self,
+        d_subgoal: int,
+        prop_dim: int,
+        action_dim: int,
+        units: int = 32,
+        backbone_units: int = 64,
+        backbone_layers: int = 1,
+    ) -> None:
+        super().__init__()
+        self.d_subgoal = d_subgoal
+        self.prop_dim = prop_dim
+        self.action_dim = action_dim
+        self.units = units
+        self.input_dim = d_subgoal + prop_dim
+
+        self.cfc = CfC(
+            input_size=self.input_dim,
+            units=units,
+            proj_size=None,
+            return_sequences=True,
+            batch_first=True,
+            backbone_units=backbone_units,
+            backbone_layers=backbone_layers,
+            backbone_dropout=0.0,
+            mode="default",
+        )
+
+        self.action_out = nn.Sequential(
+            nn.Linear(units, units),
+            nn.SiLU(),
+            nn.Linear(units, action_dim),
+            nn.Tanh(),
+        )
+
+    def forward(
+        self,
+        subgoals: torch.Tensor,
+        current_prop: torch.Tensor,
+        hx: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        is_2d = subgoals.ndim == 2
+
+        if is_2d:
+            assert current_prop.ndim == 2, (
+                f"Expected current_prop to be 2D when subgoals is 2D, got {current_prop.shape}"
+            )
+            subgoals_seq = subgoals.unsqueeze(1)
+            prop_seq = current_prop.unsqueeze(1)
+        else:
+            assert subgoals.ndim == 3, f"Expected subgoals 3D, got {subgoals.shape}"
+            assert current_prop.ndim == 3, f"Expected current_prop 3D, got {current_prop.shape}"
+            subgoals_seq = subgoals
+            prop_seq = current_prop
+
+        assert subgoals_seq.shape[-1] == self.d_subgoal, (
+            f"Expected subgoal dim {self.d_subgoal}, got {subgoals_seq.shape[-1]}"
+        )
+        assert prop_seq.shape[-1] == self.prop_dim, (
+            f"Expected prop dim {self.prop_dim}, got {prop_seq.shape[-1]}"
+        )
+
+        cfc_input = torch.cat([subgoals_seq, prop_seq], dim=-1)
+        cfc_out, next_hx = self.cfc(cfc_input, hx)
+        actions = self.action_out(cfc_out)
+
+        if is_2d:
+            actions = actions.squeeze(1)
+
+        return actions, next_hx
 
 
 class MambaMLPHeadAblation(nn.Module):
-    """Ablation Variant A: Decision Mamba Backbone + Standard MLP Action Head.
-    
-    This variant isolates the Mamba backbone without the Liquid Neural Network head.
-    Used in scientific ablation studies to prove that mechanical jerk reduction is
-    specifically driven by the Closed-Form Liquid ODE head, not merely the Mamba backbone.
+    """Ablation Variant A: Mamba-3 Backbone + Standard MLP Action Head.
+
+    Isolates the Mamba backbone without the Liquid/CfC filter. Used in ablation studies
+    to show that mechanical jerk reduction is driven by the liquid ODE filter, not the
+    Mamba backbone alone.
     """
 
     def __init__(
@@ -38,16 +127,16 @@ class MambaMLPHeadAblation(nn.Module):
             dropout=dropout,
         )
 
-        self.backbone = MambaCognitiveBackbone(
+        self.backbone = Mamba3CognitiveBackbone(
             d_model=d_model,
             d_state=d_state,
             d_conv=d_conv,
             expand=expand,
             num_layers=num_mamba_layers,
             d_subgoal=d_model,
+            prop_dim=prop_dim,
         )
 
-        # Standard Multi-Layer Perceptron Action Head (Discrete Step Prediction)
         self.mlp_head = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.SiLU(),
@@ -66,7 +155,7 @@ class MambaMLPHeadAblation(nn.Module):
         visual_frames: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         u_t = self.fusion(states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, visual_frames=visual_frames)
-        _, values_pred, latent_features = self.backbone(u_t)
+        _, latent_features, values_pred, _ = self.backbone(u_t)
         actions_pred = self.mlp_head(latent_features)
         return actions_pred, values_pred
 
@@ -83,12 +172,11 @@ class MambaMLPHeadAblation(nn.Module):
 
 
 class TransformerLiquidHeadAblation(nn.Module):
-    """Ablation Variant B: Causal Multi-Head Transformer + Closed-Form Liquid Head (CfC).
-    
-    This variant replaces the Mamba S6 backbone with a standard Causal Transformer Encoder,
-    while retaining the MIT Closed-Form Continuous-Time Liquid Head.
-    Used in scientific ablation studies to prove that O(1) state memory and high control
-    frequency (> 340 Hz) are uniquely enabled by the Mamba S6 backbone.
+    """Ablation Variant B: Causal Transformer + Closed-Form Liquid (CfC) Head.
+
+    Replaces the Mamba-3 backbone with a standard Causal Transformer Encoder while
+    retaining the liquid CfC head. Isolates the contribution of the O(N)/O(1) Mamba
+    backbone to control frequency and long-horizon state memory.
     """
 
     def __init__(
@@ -132,7 +220,7 @@ class TransformerLiquidHeadAblation(nn.Module):
             nn.LayerNorm(d_subgoal),
         )
 
-        self.liquid_head = LiquidReactiveControlHead(
+        self.liquid_head = _CfCLiquidHead(
             d_subgoal=d_subgoal,
             prop_dim=prop_dim,
             action_dim=action_dim,
