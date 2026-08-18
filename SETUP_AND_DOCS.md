@@ -129,16 +129,15 @@ python scripts/evaluate.py \
     --device cuda
 ```
 
-### 5.4. Record Rollout Video (GIF / MP4)
+### 5.4. Export Reactive Policy Head to ONNX
 ```bash
-python scripts/record_video.py \
+python scripts/export_onnx.py \
     --config configs/ant_v5_default.yaml \
     --checkpoint checkpoints/ant_v5/best_model.pt \
-    --output videos/hdml_ant_v5_rollout.gif \
-    --macro-interval 5
+    --output checkpoints/ant_v5/hdml_liquid_head.onnx
 ```
 
-### 5.5. Execute Automated Test Suite (Unit & Integration Tests)
+### 5.5. Execute Automated Test Suite (28 Unit & Integration Tests)
 ```bash
 python -c "import pytest; pytest.main(['tests/', '-v'])"
 ```
