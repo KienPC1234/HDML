@@ -26,31 +26,23 @@ class UnitreeA1CPGPolicy:
 
     def __call__(self, obs: np.ndarray, step: int, noise_level: float = 0.05) -> np.ndarray:
         t = step * 0.02
-        # Base joint angles: [hip, thigh, calf] x 4
-        # FR, FL, RR, RL
+        # obs: [torso_z, quat_w, quat_x, quat_y, quat_z, ...]
+        w, x, y, z = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
+        roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+        pitch = np.arcsin(np.clip(2 * (w * y - z * x), -1.0, 1.0))
+
         actions = np.zeros(12, dtype=np.float32)
-
-        torso_z = obs[0]
-        roll = obs[1]
-        pitch = obs[2]
-
         for i in range(4):
             phase = self.phases[i]
-            # Hip roll stabilization
-            hip_adj = -0.4 * roll if (i % 2 == 0) else 0.4 * roll
-            # Thigh pitch oscillation
-            thigh_osc = 0.45 * np.sin(self.freq * t * 2 * np.pi + phase)
-            # Calf pitch oscillation (anti-phase for leg lift)
-            calf_osc = -0.55 * np.sin(self.freq * t * 2 * np.pi + phase + np.pi / 4)
+            hip_act = -0.5 * roll if (i % 2 == 0) else 0.5 * roll
+            thigh_osc = 0.25 * np.sin(2.5 * t * 2 * np.pi + phase)
+            calf_osc = 0.30 * np.cos(2.5 * t * 2 * np.pi + phase)
+            pitch_corr = -0.4 * pitch if (i < 2) else 0.4 * pitch
 
-            # Pitch balance correction
-            pitch_corr = -0.6 * pitch if (i < 2) else 0.6 * pitch
+            actions[i * 3 + 0] = np.clip(hip_act / 0.35, -1.0, 1.0)
+            actions[i * 3 + 1] = np.clip((thigh_osc + pitch_corr) / 0.45, -1.0, 1.0)
+            actions[i * 3 + 2] = np.clip(calf_osc / 0.50, -1.0, 1.0)
 
-            actions[i * 3 + 0] = hip_adj
-            actions[i * 3 + 1] = thigh_osc + pitch_corr
-            actions[i * 3 + 2] = calf_osc
-
-        # Add exploration noise
         noise = self.rng.normal(0.0, noise_level, size=actions.shape).astype(np.float32)
         return np.clip(actions + noise, -1.0, 1.0)
 
