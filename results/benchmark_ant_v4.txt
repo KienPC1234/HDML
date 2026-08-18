@@ -1,0 +1,50 @@
+2026-08-18 08:56:27,702 [INFO] __main__: Execution hardware: cuda
+2026-08-18 08:56:27,837 [INFO] __main__: Loading trained HDML checkpoint: checkpoints/ant_v4/best_model.pt
+2026-08-18 08:56:27,919 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/ant_v4/baselines/diffusion_best.pt
+2026-08-18 08:56:27,955 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/ant_v4/baselines/dt_best.pt
+2026-08-18 08:56:27,967 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/ant_v4/baselines/iql_best.pt
+2026-08-18 08:56:28,003 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/ant_v4/baselines/rnn_best.pt
+2026-08-18 08:56:28,006 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/ant_v4/baselines/mlp_best.pt
+2026-08-18 08:56:28,007 [INFO] __main__: Running Standard Benchmark on: HDML (Decision Mamba + Liquid CfC - Ours)...
+/data/HDML_Model/.venv/lib/python3.11/site-packages/gymnasium/envs/registration.py:513: DeprecationWarning: [33mWARN: The environment Ant-v4 is out of date. You should consider upgrading to version `v5`.[0m
+  logger.deprecation(
+2026-08-18 08:56:49,414 [INFO] __main__: Running Perturbation Benchmark on: HDML (Decision Mamba + Liquid CfC - Ours)...
+2026-08-18 08:57:10,686 [INFO] __main__: Running Standard Benchmark on: Diffusion Policy (DDPM 10-step Denoising)...
+2026-08-18 08:57:50,809 [INFO] __main__: Running Perturbation Benchmark on: Diffusion Policy (DDPM 10-step Denoising)...
+2026-08-18 08:58:25,609 [INFO] __main__: Running Standard Benchmark on: Decision Transformer (Causal Attention DT)...
+2026-08-18 08:58:33,735 [INFO] __main__: Running Perturbation Benchmark on: Decision Transformer (Causal Attention DT)...
+2026-08-18 08:58:51,116 [INFO] __main__: Running Standard Benchmark on: Implicit Q-Learning (IQL / Value-Advantage)...
+2026-08-18 08:58:57,545 [INFO] __main__: Running Perturbation Benchmark on: Implicit Q-Learning (IQL / Value-Advantage)...
+2026-08-18 08:59:02,176 [INFO] __main__: Running Standard Benchmark on: Decision RNN (LSTM Recurrent Policy)...
+2026-08-18 08:59:11,225 [INFO] __main__: Running Perturbation Benchmark on: Decision RNN (LSTM Recurrent Policy)...
+2026-08-18 08:59:20,795 [INFO] __main__: Running Standard Benchmark on: MLP-BC (Standard Feedforward Reactive)...
+2026-08-18 08:59:28,046 [INFO] __main__: Running Perturbation Benchmark on: MLP-BC (Standard Feedforward Reactive)...
+
+===================================================================================================================
+ACADEMIC SOTA BENCHMARK COMPARISON ON ANT-V4 (Standard & Perturbed Robustness)
+===================================================================================================================
+
+-------------------------------------------------------------------------------------------------------------------
+Architecture / Paradigm                      | Params    | Frequency (Hz) | Latency (ms) | Jerk (Smooth)  | D4RL Score
+-------------------------------------------------------------------------------------------------------------------
+HDML (Decision Mamba + Liquid CfC - Ours)    | 997,609   | 308.6          | 3.241        | 0.0227         | 3.65      
+Diffusion Policy (DDPM 10-step Denoising)    | 155,912   | 141.8          | 7.052        | 0.5282         | 3.54      
+Decision Transformer (Causal Attention DT)   | 1,208,712 | 405.8          | 2.464        | 0.0601         | 4.38      
+Implicit Q-Learning (IQL / Value-Advantage)  | 298,763   | 3119.0         | 0.321        | 0.0041         | 5.50      
+Decision RNN (LSTM Recurrent Policy)         | 1,010,184 | 863.9          | 1.158        | 0.0169         | 4.16      
+MLP-BC (Standard Feedforward Reactive)       | 75,272    | 2335.9         | 0.428        | 0.0047         | -0.25     
+-------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------
+PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)
+-------------------------------------------------------------------------------------------------------------------
+Architecture / Paradigm                      | Raw Return           | D4RL Score   | Jerk (Smooth)  | Survival %
+-------------------------------------------------------------------------------------------------------------------
+HDML (Decision Mamba + Liquid CfC - Ours)    | 62.75 +/- 32.00      | 6.32         | 0.0843         | 100.0     %
+Diffusion Policy (DDPM 10-step Denoising)    | -117.39 +/- 26.46    | 3.39         | 0.5576         | 80.0      %
+Decision Transformer (Causal Attention DT)   | -86.96 +/- 38.06     | 3.88         | 0.0773         | 100.0     %
+Implicit Q-Learning (IQL / Value-Advantage)  | -33.11 +/- 33.13     | 4.76         | 0.2466         | 40.0      %
+Decision RNN (LSTM Recurrent Policy)         | -84.27 +/- 30.18     | 3.93         | 0.0179         | 80.0      %
+MLP-BC (Standard Feedforward Reactive)       | -431.82 +/- 33.04    | -1.73        | 0.2207         | 100.0     %
+-------------------------------------------------------------------------------------------------------------------
+

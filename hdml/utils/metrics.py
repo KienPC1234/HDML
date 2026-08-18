@@ -5,6 +5,34 @@ from typing import Callable, Any
 import numpy as np
 import torch
 
+# Official D4RL reference scores (random / expert) used for normalized scoring,
+# matching the constants of the original D4RL library (get_normalized_score).
+D4RL_REF_SCORES: dict[str, tuple[float, float]] = {
+    "halfcheetah": (-280.178739, 12135.0),
+    "hopper": (-20.272305, 3234.3),
+    "walker2d": (1.629008, 4592.3),
+    "ant": (-325.6, 5819.9),
+    "humanoid": (121.3, 7435.5),
+}
+
+
+def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
+    """Normalize a raw episodic return against official D4RL reference scores.
+
+    Args:
+        env_name: Environment name, e.g. "HalfCheetah-v5" or "ant".
+        raw_return: Raw undiscounted episodic return.
+
+    Returns:
+        Normalized score in [0, 100+] relative to D4RL random/expert bounds.
+        Returns the raw return unchanged if no reference is known for env_name.
+    """
+    env_key = env_name.lower()
+    for key, (r_score, e_score) in D4RL_REF_SCORES.items():
+        if key in env_key:
+            return 100.0 * (raw_return - r_score) / (e_score - r_score)
+    return raw_return
+
 
 def compute_action_smoothness(actions: np.ndarray | torch.Tensor) -> float:
     """Compute mean second-order difference (jerk metric / smoothness) of an action sequence.

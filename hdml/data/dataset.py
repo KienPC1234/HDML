@@ -48,10 +48,18 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         else:
             self.state_std = np.asarray(state_std, dtype=np.float32) + 1e-6
 
-        # Fast vectorized sliding window buffer creation
+        # Fast vectorized sliding window buffer creation.
+        #
+        # Causal action-input convention (no leakage, standard Decision-Transformer
+        # formulation): the model input action at position j is the action executed
+        # at the *previous* step (a_{t+j-1}), and the prediction target is a_{t+j}.
+        # To achieve this, the action array is padded with one leading zero row so
+        # that window i contains [a_{i-1}, a_i, ..., a_{i+k-2}] (a_{-1} == 0 for the
+        # first step of each trajectory).
         k = self.context_length
         all_states_list: list[np.ndarray] = []
         all_actions_list: list[np.ndarray] = []
+        all_target_actions_list: list[np.ndarray] = []
         all_rtgs_list: list[np.ndarray] = []
         all_time_list: list[np.ndarray] = []
         all_mask_list: list[np.ndarray] = []
@@ -64,12 +72,14 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             traj_len = len(raw_states)
 
             pad_states = np.pad(raw_states, ((0, k), (0, 0)), mode="constant")
-            pad_actions = np.pad(raw_actions, ((0, k), (0, 0)), mode="constant")
+            pad_actions = np.pad(raw_actions, ((1, k), (0, 0)), mode="constant")
             pad_rtgs = np.pad(raw_rtgs, ((0, k), (0, 0)), mode="constant")
             pad_time = np.pad(raw_timesteps, (0, k), mode="constant")
 
             s_windows = np.lib.stride_tricks.sliding_window_view(pad_states, (k, self.prop_dim))[:traj_len, 0, :, :]
             a_windows = np.lib.stride_tricks.sliding_window_view(pad_actions, (k, self.action_dim))[:traj_len, 0, :, :]
+            tgt_pad_actions = np.pad(raw_actions, ((0, k), (0, 0)), mode="constant")
+            tgt_a_windows = np.lib.stride_tricks.sliding_window_view(tgt_pad_actions, (k, self.action_dim))[:traj_len, 0, :, :]
             r_windows = np.lib.stride_tricks.sliding_window_view(pad_rtgs, (k, 1))[:traj_len, 0, :, :]
             t_windows = np.lib.stride_tricks.sliding_window_view(pad_time, k)[:traj_len]
 
@@ -80,12 +90,14 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
 
             all_states_list.append(s_windows)
             all_actions_list.append(a_windows)
+            all_target_actions_list.append(tgt_a_windows)
             all_rtgs_list.append(r_windows)
             all_time_list.append(t_windows)
             all_mask_list.append(masks)
 
         states_buf = np.ascontiguousarray(np.concatenate(all_states_list, axis=0), dtype=np.float32)
         actions_buf = np.ascontiguousarray(np.concatenate(all_actions_list, axis=0), dtype=np.float32)
+        target_actions_buf = np.ascontiguousarray(np.concatenate(all_target_actions_list, axis=0), dtype=np.float32)
         rtgs_buf = np.ascontiguousarray(np.concatenate(all_rtgs_list, axis=0), dtype=np.float32)
         timesteps_buf = np.ascontiguousarray(np.concatenate(all_time_list, axis=0), dtype=np.int64)
         mask_buf = np.ascontiguousarray(np.concatenate(all_mask_list, axis=0), dtype=np.float32)
@@ -95,7 +107,9 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self.rtgs = torch.from_numpy(rtgs_buf)
         self.timesteps = torch.from_numpy(timesteps_buf)
         self.mask = torch.from_numpy(mask_buf)
-        self.target_actions = self.actions.clone()
+        # Prediction targets are the un-shifted actions of the same window positions;
+        # the shifted input actions are stored in self.actions.
+        self.target_actions = torch.from_numpy(target_actions_buf)
         self.target_rtgs = self.rtgs.clone()
 
         total_samples = self.states.shape[0]
@@ -177,6 +191,17 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         norm_states = (raw_states - self.state_mean) / self.state_std
         scaled_rtgs = raw_rtgs / self.scale_return
 
+        # Causal action-input convention: input action at position j is the action of
+        # the *previous* step (a_{start+j-1}), target is a_{start+j}. No leakage.
+        if actual_len > 0:
+            if start_t > 0:
+                prev_action = traj["actions"][start_t - 1 : start_t]
+            else:
+                prev_action = np.zeros((1, self.action_dim), dtype=np.float32)
+            input_actions = np.concatenate([prev_action, raw_actions[:-1]], axis=0)
+        else:
+            input_actions = np.zeros((0, self.action_dim), dtype=np.float32)
+
         k = self.context_length
         padded_states = np.zeros((k, self.prop_dim), dtype=np.float32)
         padded_actions = np.zeros((k, self.action_dim), dtype=np.float32)
@@ -185,10 +210,13 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         mask = np.zeros((k,), dtype=np.float32)
 
         padded_states[:actual_len] = norm_states
-        padded_actions[:actual_len] = raw_actions
+        padded_actions[:actual_len] = input_actions
         padded_rtgs[:actual_len, 0] = scaled_rtgs
         padded_timesteps[:actual_len] = raw_timesteps
         mask[:actual_len] = 1.0
+
+        target_actions = np.zeros((k, self.action_dim), dtype=np.float32)
+        target_actions[:actual_len] = raw_actions
 
         return {
             "states": torch.from_numpy(padded_states),
@@ -196,7 +224,7 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             "rtgs": torch.from_numpy(padded_rtgs),
             "timesteps": torch.from_numpy(padded_timesteps),
             "mask": torch.from_numpy(mask),
-            "target_actions": torch.from_numpy(padded_actions.copy()),
+            "target_actions": torch.from_numpy(target_actions),
             "target_rtgs": torch.from_numpy(padded_rtgs.copy()),
         }
 

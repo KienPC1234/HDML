@@ -19,7 +19,8 @@ def test_d4rl_score_calculation() -> None:
     score = get_d4rl_normalized_score("HalfCheetah-v5", 12135.0)
     assert abs(score - 100.0) < 1e-4
 
-    rand_score = get_d4rl_normalized_score("HalfCheetah-v5", -281.0)
+    # Official D4RL reference bounds for HalfCheetah: random = -280.178739, expert = 12135.0
+    rand_score = get_d4rl_normalized_score("HalfCheetah-v5", -280.178739)
     assert abs(rand_score - 0.0) < 1e-4
 
 
