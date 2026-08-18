@@ -94,9 +94,7 @@ class HDMLEvaluator:
             history_rtgs.append(scaled_rtg)
             history_timesteps.append(t)
             if len(history_actions) == 0:
-                history_actions.append(np.zeros(act_dim, dtype=np.float32))
-
-            # Trigger Mamba Macro-Planner at macro intervals (or on first step)
+                history_actions.append(np.zeros(act_dim, dtype=np.float32))            # Trigger Mamba Macro-Planner at macro intervals (or on first step)
             if t % macro_interval == 0 or current_subgoal is None:
                 ctx_len = min(len(history_states), self.context_length)
                 ctx_states = np.array(history_states[-ctx_len:], dtype=np.float32)
@@ -158,8 +156,9 @@ class HDMLEvaluator:
             ep_rewards.append(float(reward))
             target_rtg -= float(reward)
 
-            # Update action history with actual action taken
-            history_actions[-1] = action
+            # Update action history with the actual action taken (the input action at
+            # the final context position is thus a_{t-1}, matching the training
+            # causal action-input convention).
             history_actions.append(action)
 
             obs = next_obs

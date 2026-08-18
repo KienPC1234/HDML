@@ -51,23 +51,51 @@ class MediumExpertLocomotionPolicy:
             self.freq = 2.5
             self.phases = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2, np.pi, 3 * np.pi / 2, 0.0, np.pi / 2], dtype=np.float32)
             self.amplitudes = np.array([0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80], dtype=np.float32)
+        elif "hopper" in env_name.lower():
+            # Hopper 3-DOF dynamic single-leg hopping & balance gait: [thigh, leg, foot]
+            self.freq = 2.8
+            self.phases = np.array([0.0, np.pi / 3, -np.pi / 4], dtype=np.float32)
+            self.amplitudes = np.array([0.85, 0.90, 0.65], dtype=np.float32)
+        elif "walker" in env_name.lower():
+            # Walker2d 6-DOF alternating bipedal stepping gait: [r_thigh, r_leg, r_foot, l_thigh, l_leg, l_foot]
+            self.freq = 2.2
+            self.phases = np.array([0.0, np.pi / 4, -np.pi / 6, np.pi, np.pi + np.pi / 4, np.pi - np.pi / 6], dtype=np.float32)
+            self.amplitudes = np.array([0.90, 0.80, 0.60, 0.90, 0.80, 0.60], dtype=np.float32)
         else:
             self.freq = 2.0
             self.phases = self.rng.uniform(0, 2 * np.pi, size=(action_dim,)).astype(np.float32)
             self.amplitudes = np.full((action_dim,), 0.8, dtype=np.float32)
 
-    def __call__(self, obs: np.ndarray, step: int) -> np.ndarray:
+    def __call__(self, obs: np.ndarray, step: int, quality: str = "expert") -> np.ndarray:
         t = step * 0.05
         # Dynamic phase-coupled oscillation
         base_act = self.amplitudes * np.sin(self.freq * t * 2 * np.pi + self.phases)
 
-        # State feedback damping on velocity components (obs[8:14] in HalfCheetah)
+        # Dynamic state feedback stabilization
         feedback = np.zeros(self.action_dim, dtype=np.float32)
-        if len(obs) >= 8 and "halfcheetah" in self.env_name.lower():
+        if "halfcheetah" in self.env_name.lower() and len(obs) >= 14:
             feedback = -0.05 * obs[8:14]
+        elif "hopper" in self.env_name.lower() and len(obs) >= 6:
+            # Torso pitch balance: obs[1]=pitch angle, obs[5]=pitch velocity
+            pitch_corr = -1.2 * obs[1] - 0.1 * obs[5]
+            feedback[0] = pitch_corr
+        elif "walker" in self.env_name.lower() and len(obs) >= 14:
+            # Torso balance: obs[1]=pitch angle, obs[2]=pitch velocity
+            feedback[0] = -0.8 * obs[1]
+            feedback[3] = -0.8 * obs[1]
 
-        noise = self.rng.normal(0.0, 0.04, size=(self.action_dim,)).astype(np.float32)
-        return np.clip(base_act + feedback + noise, -1.0, 1.0)
+        # Quality adjustment: expert (low noise), medium (moderate noise/attenuation), medium-replay
+        if quality == "medium":
+            noise = self.rng.normal(0.0, 0.25, size=(self.action_dim,)).astype(np.float32)
+            scale = 0.75
+        elif quality == "medium-replay":
+            noise = self.rng.normal(0.0, 0.40, size=(self.action_dim,)).astype(np.float32)
+            scale = 0.60
+        else:  # expert / medium-expert
+            noise = self.rng.normal(0.0, 0.04, size=(self.action_dim,)).astype(np.float32)
+            scale = 1.0
+
+        return np.clip(scale * (base_act + feedback) + noise, -1.0, 1.0)
 
 
 class HeuristicPolicy:

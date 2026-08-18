@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 from hdml.data.collector import discount_cumsum, TrajectoryCollector
-from hdml.data.dataset import TrajectoryDataset
+from hdml.data.dataset import TrajectoryDataset, FastTensorTrajectoryDataset
 
 
 def test_discount_cumsum() -> None:
@@ -68,3 +68,34 @@ def test_trajectory_dataset_batching() -> None:
     assert batch["timesteps"].shape == (4, 10)
     assert batch["mask"].shape == (4, 10)
     assert (batch["mask"] >= 0.0).all() and (batch["mask"] <= 1.0).all()
+
+
+def test_no_leakage_action_input_shift() -> None:
+    """The model input action at position j must be a_{j-1} (causal, no leakage).
+
+    The prediction target at a valid position j is a_j. Therefore for any two
+    consecutive valid positions (j, j+1), the input action at j+1 must equal the
+    target action at j. This locks in the standard Decision-Transformer formulation.
+    """
+    traj = {
+        "observations": np.random.randn(30, 8).astype(np.float32),
+        "actions": np.random.randn(30, 2).astype(np.float32),
+        "rewards": np.ones(30, dtype=np.float32),
+        "returns_to_go": np.ones(30, dtype=np.float32),
+        "dones": np.zeros(30, dtype=bool),
+        "timesteps": np.arange(30, dtype=np.int64),
+        "total_return": np.float32(30.0),
+    }
+
+    for dataset_cls in (FastTensorTrajectoryDataset, TrajectoryDataset):
+        dataset = dataset_cls([traj], context_length=8, scale_return=10.0)
+        for i in range(len(dataset)):
+            sample = dataset[i]
+            mask = sample["mask"].numpy()
+            a_in = sample["actions"].numpy()
+            a_tgt = sample["target_actions"].numpy()
+            k = a_in.shape[0]
+            for j in range(k - 1):
+                if mask[j] > 0.5 and mask[j + 1] > 0.5:
+                    np.testing.assert_allclose(a_in[j + 1], a_tgt[j], atol=1e-6,
+                                               err_msg=f"{dataset_cls.__name__} leak at window {i}, pos {j}")

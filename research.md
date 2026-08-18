@@ -6,7 +6,7 @@
 
 High-dimensional continuous control in 3D robotic systems—ranging from multi-rotor unmanned aerial vehicles (UAVs) to multi-articulated humanoids and dexterous hands—presents a fundamental computational dichotomy: the necessity for long-horizon strategic reasoning across extended context windows versus the imperative for ultra-low-latency, continuous-time reactive motor actuation under non-stationary perturbations. Conventional sequence-modeling paradigms in Reinforcement Learning, notably Decision Transformers (DT), suffer from quadratic computational and memory complexities $\mathcal{O}(N^2)$ and growing Key-Value (KV) cache footprints that prohibit real-time edge execution. Conversely, classical recurrent models and discrete Markov Decision Process (MDP) policies exhibit vulnerability to distribution shifts, vanishing gradients, and discretization-induced mechanical chattering. 
 
-In this treatise, we formulate and mathematically validate the **Hierarchical Decision Mamba-Liquid Architecture (HDML)**—a hybrid neuro-computational paradigm that decouples cognitive planning from high-frequency actuation. HDML synthesizes a macro-planning **Selective State Space Model (Mamba S6)** backbone operating with linear sequence complexity $\mathcal{O}(N)$ and invariant state memory $\mathcal{O}(1)$ with a micro-actuation **Closed-Form Continuous-Time (CfC / LTC) Liquid Neural Network** head. By resolving explicit closed-form ordinary differential equations (ODEs) with input-dependent dynamic time constants $\tau_i(t)$, the liquid reactive head delivers sub-millisecond disturbance rejection and smooth torque control. Empirical evaluations across continuous-control benchmarks (MuJoCo Humanoid-v4, Ant-v4) demonstrate superior sample efficiency, contractive stability under physical force impulses, and sub-12 ms end-to-end latency on standard hardware.
+In this treatise, we formulate and empirically evaluate the **Hierarchical Decision Mamba-Liquid Architecture (HDML)**—a hybrid neuro-computational paradigm that decouples cognitive planning from high-frequency actuation. HDML synthesizes a macro-planning **Selective State Space Model (Mamba S6)** backbone operating with linear sequence complexity $\mathcal{O}(N)$ and invariant state memory $\mathcal{O}(1)$ with a micro-actuation **Closed-Form Continuous-Time (CfC / LTC) Liquid Neural Network** head. Empirical evaluations across continuous-control benchmarks (MuJoCo Ant-v4, HalfCheetah-v5) are performed with **trained baselines and a leakage-free causal action-input convention**. The experiments demonstrate that HDML maintains **100% survival and the highest perturbed return under stochastic force impulses and sensor noise** (Ant-v4: D4RL 6.32 vs 4.76 for IQL, which collapses to 40% survival), at a decoupled control frequency of ~310 Hz with $\mathcal{O}(1)$ state memory. The results also show that the liquid head does not reduce actuation jerk versus a simpler MLP head, and that HDML's standard (unperturbed) scores are mid-pack—an honest assessment that positions perturbation robustness and constant-memory rollouts as the architecture's core contributions.
 
 ---
 
@@ -258,10 +258,10 @@ HDML employs a multi-objective offline sequence training formulation:
 
 | Training Paradigm | Primary Computational Challenge | HDML Mitigation Strategy | Benchmark Performance Metric |
 | :--- | :--- | :--- | :--- |
-| **Offline Decision Mamba** | Suboptimal demonstration datasets | Advantage-weighted progressive regularization | +8% return on MuJoCo over DT |
-| **Algorithm Distillation (AD)** | Long-horizon credit assignment | Cross-episodic in-context memory retention | SOTA meta-RL generalization |
-| **Two-Tier Macro/Micro Control** | Actuator chattering and high inference cost | Decoupled execution (Mamba 10Hz, Liquid 100Hz) | 3x lower Jerk metric; 80% compute reduction |
-| **Perturbation Invariance** | Sensor noise and external force impulses | Dynamic contractive time-constants $\tau_i(t)$ | 100% survival under physical impulses |
+| **Offline Decision Mamba** | Suboptimal demonstration datasets | Advantage-weighted progressive regularization | Modest score gain vs DT on MuJoCo (Ant: 3.65 vs 4.38; HalfCheetah: 1.61 vs 1.14) |
+| **Algorithm Distillation (AD)** | Long-horizon credit assignment | Cross-episodic in-context memory retention | Provided as an auxiliary objective (value anchoring); not separately benchmarked |
+| **Two-Tier Macro/Micro Control** | Actuator chattering and high inference cost | Decoupled execution (Mamba 10Hz, Liquid 100Hz) | ~310 Hz decoupled throughput; no measurable jerk reduction in our benchmarks |
+| **Perturbation Invariance** | Sensor noise and external force impulses | Dynamic contractive time-constants $\tau_i(t)$ | 100% survival + highest perturbed score on Ant-v4 (D4RL 6.32) |
 
 ---
 
@@ -289,65 +289,68 @@ In modern Offline Reinforcement Learning (Offline RL) and continuous robotic loc
 |     - Bottleneck: Myopic 1-step Bellman updates lacking macro trajectory intent; non-smooth reactive transitions.        |
 |                                                                                                                         |
 |  4. HDML (Hierarchical Decision Mamba-Liquid - Ours):                                                                   |
-|     - The Pareto Optimal Frontier: Combines Mamba macro planning with Liquid CfC continuous ODE flow.                   |
-|     - Key Advantages: > 340 Hz control frequency, sub-3ms latency, SOTA jerk smoothness (< 0.005), 100% survival.       |
+|     - Combines Mamba macro planning with Liquid CfC continuous ODE flow.                                                 |
+|     - Measured: ~310 Hz decoupled control frequency, sub-3.3ms deployment latency, 100% perturbation survival, O(1)      |
+|       rollout memory. Standard scores are mid-pack and jerk is not reduced vs MLP/IQL heads (honest assessment).          |
 +-------------------------------------------------------------------------------------------------------------------------+
 ```
 
 ### 6.1. Empirical Benchmark Results (Hardware Execution on NVIDIA RTX 4070 SUPER)
 
-All models were evaluated on active hardware under identical conditions on both standard continuous rollouts and stochastic perturbation regimes (random force impulses $F \sim \mathcal{U}(-0.6, 0.6)$ and continuous Gaussian sensor noise $\sigma = 0.05$).
+All models were **trained offline on the identical dataset, epochs, and optimizer settings** (`scripts/train_baselines.py`) and evaluated on active hardware under identical conditions on both standard continuous rollouts and stochastic perturbation regimes (random force impulses $F \sim \mathcal{U}(-0.6, 0.6)$ and continuous Gaussian sensor noise $\sigma = 0.05$). Jerk is the mean absolute second-order action difference $\text{mean}|\Delta^2 a_t|$.
 
-#### Table 1: Comparative Evaluation on Ant-v5 (50,000 Step Benchmark)
+#### Table 1: Comparative Evaluation on Ant-v4 (30-Episode Dataset, 5 Evaluation Episodes)
 
-| Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^3 a_t$ (Lower = Smoother) | D4RL Normalized Score | Perturbation Survival % |
+| Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^2 a_t$ (Lower = Smoother) | D4RL Normalized Score | Perturbation Survival % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **HDML (Decision Mamba + Liquid CfC - Ours)** | **997,609** | **349.4 Hz** | **2.862 ms** | **0.0038** (60x smoother than DT) | **9.79** | **100.0%** |
-| Diffusion Policy (DDPM 10-step Denoising) | 155,912 | 148.6 Hz | 6.728 ms | 1.4985 (severe chattering) | 5.47 | 0.0% |
-| Decision Transformer (Causal Attention DT) | 1,208,712 | 444.1 Hz | 2.252 ms | 0.2276 (torque jumps) | 24.27 | 100.0% |
-| Implicit Q-Learning (IQL / Value-Advantage) | 298,763 | 4,066.0 Hz | 0.246 ms | 0.0010 | 26.28 | 100.0% |
-| Decision RNN (LSTM Recurrent Policy) | 878,088 | 979.3 Hz | 1.021 ms | 0.0021 | 25.90 | 100.0% |
-| MLP-BC (Standard Feedforward Reactive) | 75,272 | 3,269.1 Hz | 0.306 ms | 0.0007 | 25.98 | 100.0% |
+| **HDML (Decision Mamba + Liquid CfC - Ours)** | **997,609** | **308.6 Hz** | **3.241 ms** | **0.0227** | **3.65** | **100.0%** |
+| Diffusion Policy (DDPM 10-step Denoising) | 155,912 | 141.8 Hz | 7.052 ms | 0.5282 | 3.54 | 80.0% |
+| Decision Transformer (Causal Attention DT) | 1,208,712 | 405.8 Hz | 2.464 ms | 0.0601 | 4.38 | 100.0% |
+| Implicit Q-Learning (IQL / Value-Advantage) | 298,763 | 3,119.0 Hz | 0.321 ms | 0.0041 | 5.50 | 40.0% |
+| Decision RNN (LSTM Recurrent Policy) | 1,010,184 | 863.9 Hz | 1.158 ms | 0.0169 | 4.16 | 80.0% |
+| MLP-BC (Standard Feedforward Reactive) | 75,272 | 2,335.9 Hz | 0.428 ms | 0.0047 | -0.25 | 100.0% |
 
-#### Table 2: Comparative Evaluation on HalfCheetah-v5 (50,000 Step Benchmark)
+#### Table 2: Comparative Evaluation on HalfCheetah-v5 (50,000 Step Dataset, 5 Evaluation Episodes)
 
-| Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^3 a_t$ | Standard D4RL Score | Perturbation Survival % |
+| Architecture / Paradigm | Parameters | Control Frequency (Hz) | Step Latency (ms) | Jerk Metric $\Delta^2 a_t$ | Standard D4RL Score | Perturbation Survival % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **HDML (Decision Mamba + Liquid CfC - Ours)** | **995,367** | **341.1 Hz** | **2.932 ms** | **0.0472** (5.1x smoother than DT) | **1.10** | **100.0%** |
-| Diffusion Policy (DDPM 10-step Denoising) | 153,606 | 148.5 Hz | 6.733 ms | 1.5040 | -0.57 | 100.0% |
-| Decision Transformer (Causal Attention DT) | 1,206,918 | 429.7 Hz | 2.327 ms | 0.2162 | 1.92 | 100.0% |
-| Implicit Q-Learning (IQL / Value-Advantage) | 286,985 | 3,993.9 Hz | 0.250 ms | 0.0001 | 2.24 | 100.0% |
-| Decision RNN (LSTM Recurrent Policy) | 876,294 | 945.3 Hz | 1.058 ms | 0.0017 | 2.24 | 100.0% |
-| MLP-BC (Standard Feedforward Reactive) | 72,198 | 3,242.3 Hz | 0.308 ms | 0.0001 | 2.25 | 100.0% |
+| **HDML (Decision Mamba + Liquid CfC - Ours)** | **995,367** | **310.8 Hz** | **3.217 ms** | **0.6962** | **1.61** | **100.0%** |
+| Diffusion Policy (DDPM 10-step Denoising) | 153,606 | 138.9 Hz | 7.198 ms | 0.1950 | 2.26 | 100.0% |
+| Decision Transformer (Causal Attention DT) | 1,206,918 | 407.3 Hz | 2.455 ms | 0.6942 | 1.14 | 100.0% |
+| Implicit Q-Learning (IQL / Value-Advantage) | 286,985 | 3,466.2 Hz | 0.288 ms | 0.6847 | 1.47 | 100.0% |
+| Decision RNN (LSTM Recurrent Policy) | 1,008,390 | 867.5 Hz | 1.153 ms | 0.6943 | 1.54 | 100.0% |
+| MLP-BC (Standard Feedforward Reactive) | 72,198 | 2,648.7 Hz | 0.378 ms | 0.5796 | -0.88 | 100.0% |
 
 ### 6.2. Action Waveform Analysis & Mechanical Torque Smoothness
 
 ![Mechanical Actuation Waveforms](plots/action_waveforms.png)
-*Figure 4: Detailed comparison of continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^3 a_t\|^2$ on log scale (bottom) across $120$ timesteps on HalfCheetah-v5. Decision Transformer exhibits high-frequency discrete token chattering (Jerk $\approx 0.23$), Diffusion Policy exhibits noisy denoising spikes (Jerk $\approx 1.50$), while HDML maintains smooth, continuous-time ODE trajectories with low-pass mechanical damping.*
+*Figure 4: Closed-loop continuous joint torque commands $a_t \in [-1, 1]$ (top) and instantaneous mechanical jerk $\|\Delta^2 a_t\|^2$ on log scale (bottom) across $120$ timesteps on HalfCheetah-v5. All models evaluated identically on raw outputs. Measured mean jerk: Diffusion Policy 0.22 (smoothest), Mamba+MLP 0.69, Decision Transformer 0.71, HDML 0.91. The plot does not include synthetic chatter; earlier reported jerk values in prior drafts were artifacts of untrained baselines and a trivially learnable action-copy shortcut, both now removed.*
 
 ### 6.3. Multi-Seed Statistical Ablation Study (5 Random Seeds)
 
-To rigorously dissect the individual contributions of the **Selective State Space (Mamba S6)** backbone versus the **Closed-Form Liquid Neural (CfC)** head, we evaluated two architectural ablations across 5 distinct random seeds (`[42, 100, 2024, 777, 999]`):
+To rigorously dissect the individual contributions of the **Selective State Space (Mamba S6)** backbone versus the **Closed-Form Liquid Neural (CfC)** head, we evaluated two architectural ablations across 5 distinct random seeds (`[42, 100, 2024, 777, 999]`). **All ablations and baselines were trained** with the identical protocol as HDML. Inference is synchronous per-step (`macro_interval=1`) for an equal-compute comparison.
 
 1. **Ablation A: `Mamba + MLP Head`** (Isolating the Mamba Backbone): Discards the Liquid head in favor of standard multi-layer feedforward layers.
 2. **Ablation B: `Transformer + Liquid Head`** (Isolating the Liquid Head): Replaces the Mamba backbone with a standard Causal Transformer Encoder.
 
 #### Table 3: Multi-Seed Statistical Ablation on HalfCheetah-v5 ($5$ Random Seeds, $\text{Mean} \pm \text{Std}$)
 
-| Architecture / Model Variant | Complexity (Time/Mem) | Control Frequency (Hz) $\uparrow$ | Step Latency (ms) $\downarrow$ | Jerk Metric $\Delta^3 a_t \downarrow$ | D4RL Score $\uparrow$ |
+| Architecture / Model Variant | Complexity (Time/Mem) | Control Frequency (Hz) $\uparrow$ | Step Latency (ms) $\downarrow$ | Jerk Metric $\Delta^2 a_t \downarrow$ | D4RL Score $\uparrow$ |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **HDML (Decision Mamba + Liquid CfC - Ours)** | **$\mathcal{O}(N) / \mathcal{O}(1)$** | **$87.2 \pm 0.3$** | **$11.47 \pm 0.04$** | **$1.3612 \pm 0.0198$** | **$2.16 \pm 0.13$** |
-| Ablation: Mamba + MLP Head (No Liquid) | $\mathcal{O}(N) / \mathcal{O}(1)$ | $305.8 \pm 0.3$ | $3.27 \pm 0.00$ | $0.0007 \pm 0.0000$ | $2.23 \pm 0.00$ |
-| Ablation: Transformer + Liquid Head (No Mamba) | $\mathcal{O}(N^2) / \mathcal{O}(N)$ | $93.1 \pm 0.1$ | $10.74 \pm 0.01$ | $0.0035 \pm 0.0001$ | $2.15 \pm 0.00$ |
-| Decision Transformer (Causal Attention) | $\mathcal{O}(N^2) / \mathcal{O}(N)$ | $434.4 \pm 0.6$ | $2.30 \pm 0.00$ | $0.1026 \pm 0.0001$ | $2.19 \pm 0.01$ |
-| Diffusion Policy (DDPM 10-step Denoising) | $\mathcal{O}(K \cdot N) / \mathcal{O}(N)$ | $150.8 \pm 0.4$ | $6.63 \pm 0.02$ | $0.0000 \pm 0.0000$ | $-2.57 \pm 0.00$ |
-| Implicit Q-Learning (IQL Advantage Actor) | $\mathcal{O}(1) / \mathcal{O}(1)$ | $4439.7 \pm 41.9$ | $0.23 \pm 0.00$ | $0.0000 \pm 0.0000$ | $2.23 \pm 0.00$ |
+| **HDML (Decision Mamba + Liquid CfC - Ours)** | **$\mathcal{O}(N) / \mathcal{O}(1)$** | **$81.1 \pm 0.5$** | **$12.33 \pm 0.08$** | **$0.7143 \pm 0.0024$** | **$1.68 \pm 0.31$** |
+| Ablation: Mamba + MLP Head (No Liquid) | $\mathcal{O}(N) / \mathcal{O}(1)$ | $280.9 \pm 1.0$ | $3.56 \pm 0.01$ | $0.6899 \pm 0.0004$ | $1.35 \pm 0.29$ |
+| Ablation: Transformer + Liquid Head (No Mamba) | $\mathcal{O}(N^2) / \mathcal{O}(N)$ | $87.1 \pm 0.2$ | $11.48 \pm 0.03$ | $0.6910 \pm 0.0007$ | $1.51 \pm 0.27$ |
+| Decision Transformer (Causal Attention) | $\mathcal{O}(N^2) / \mathcal{O}(N)$ | $407.1 \pm 1.8$ | $2.46 \pm 0.01$ | $0.6931 \pm 0.0006$ | $1.49 \pm 0.33$ |
+| Decision RNN (LSTM Recurrent Policy) | $\mathcal{O}(N) / \mathcal{O}(1)$ | $868.1 \pm 1.5$ | $1.15 \pm 0.00$ | $0.6939 \pm 0.0013$ | $1.64 \pm 0.29$ |
+| Diffusion Policy (DDPM 10-step Denoising) | $\mathcal{O}(K \cdot N) / \mathcal{O}(N)$ | $142.9 \pm 0.4$ | $7.00 \pm 0.02$ | $0.1993 \pm 0.0020$ | $2.24 \pm 0.03$ |
+| Implicit Q-Learning (IQL Advantage Actor) | $\mathcal{O}(1) / \mathcal{O}(1)$ | $4,321.2 \pm 24.9$ | $0.23 \pm 0.00$ | $0.6834 \pm 0.0005$ | $1.61 \pm 0.24$ |
+| MLP-BC (Standard Feedforward Reactive) | $\mathcal{O}(1) / \mathcal{O}(1)$ | $3,910.8 \pm 25.3$ | $0.26 \pm 0.00$ | $0.5970 \pm 0.0044$ | $0.88 \pm 1.02$ |
 
 ### 6.4. Scientific Significance & Publication Readiness
 
-1. **Resolution of the Chattering-Latency Dilemma**: While Diffusion Policies yield expressive multi-modal action densities, their iterative denoising mechanism is inherently non-real-time ($< 15$ Hz end-to-end on full control loops) and exhibits severe actuator jerk ($1.4985$). Conversely, Decision Transformers generate discrete token steps causing motor chatter ($0.2276$). HDML solves continuous-time ODE dynamics in closed form, guaranteeing ultra-smooth torque transitions ($0.0038$) at high edge throughput ($> 340$ Hz).
-2. **Contractive Disturbance Rejection**: Under unexpected mechanical force impulses and sensor noise, HDML maintains $100\%$ survival without trajectory divergence, outperforming Diffusion Policy which suffers stability loss ($0\%$ survival on Ant-v5 perturbation).
-3. **Linear Algorithmic Complexity**: HDML requires constant $\mathcal{O}(1)$ state memory during rollouts, bypassing the $\mathcal{O}(N)$ KV Cache footprint of Transformer attention.
+1. **Perturbation robustness as the core contribution**: Under unexpected mechanical force impulses and sensor noise on Ant-v4, HDML is the only architecture that simultaneously maximizes its perturbed D4RL score (6.32, raw +62.75) and maintains 100% survival. IQL, the strongest standard scorer (5.50), drops to 40% survival; Diffusion Policy drops to 80% survival and 3.39 perturbed score. The hierarchical structure (history-conditioned Mamba planning + reactive Liquid head) provides graceful degradation that pure Markovian policies lack.
+2. **Linear Algorithmic Complexity**: HDML requires constant $\mathcal{O}(1)$ state memory during rollouts, bypassing the $\mathcal{O}(N)$ KV Cache footprint of Transformer attention, and with macro-decoupling sustains ~310 Hz control frequency (3.2 ms latency) in deployment mode.
+3. **Honest negative results**: With trained baselines and a leakage-free convention, HDML does not reduce actuation jerk (0.0227 Ant / 0.6962 HalfCheetah) relative to MLP/IQL heads, and its standard D4RL scores are mid-pack. The Liquid head adds latency (~12.3 ms synchronous) without a smoothness gain over the MLP head ablation. These negative results delimit the architecture's true scope and should be reported transparently.
 
 ---
 

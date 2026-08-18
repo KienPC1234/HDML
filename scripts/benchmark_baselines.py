@@ -20,32 +20,14 @@ from hdml.models import (
     MLPBCBaseline,
 )
 from hdml.evaluation.perturbations import SensorNoisePerturbation, ForceImpulsePerturbation
-from hdml.utils.metrics import compute_action_smoothness
+from hdml.utils.metrics import compute_action_smoothness, get_d4rl_normalized_score
 from hdml.utils.config import HDMLConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Standard D4RL Reference Scores (random / expert) for benchmark environments
-D4RL_REF_SCORES: dict[str, tuple[float, float]] = {
-    "HalfCheetah-v4": (-281.0, 12135.0),
-    "HalfCheetah-v5": (-281.0, 12135.0),
-    "halfcheetah": (-281.0, 12135.0),
-    "Ant-v4": (-325.0, 4700.0),
-    "Ant-v5": (-325.0, 4700.0),
-    "ant": (-325.0, 4700.0),
-    "Humanoid-v4": (123.0, 6000.0),
-    "Humanoid-v5": (123.0, 6000.0),
-    "humanoid": (123.0, 6000.0),
-}
-
-
-def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
-    """Compute standard D4RL normalized score in range [0, 100+]."""
-    for key, (r_score, e_score) in D4RL_REF_SCORES.items():
-        if key.lower() in env_name.lower():
-            return 100.0 * (raw_return - r_score) / (e_score - r_score)
-    return raw_return
+# Standard D4RL reference scores are defined centrally in hdml/utils/metrics.py
+# (official D4RL library constants). Imported via get_d4rl_normalized_score.
 
 
 def evaluate_policy(
@@ -94,7 +76,6 @@ def evaluate_policy(
         current_rtg = target_return
         hx = None
         current_subgoal = None
-        prev_action = np.zeros(act_dim, dtype=np.float32)
 
         for t in range(1000):
             raw_obs = np.asarray(obs, dtype=np.float32)
@@ -107,7 +88,8 @@ def evaluate_policy(
             history_states.append(norm_obs)
             history_rtgs.append(scaled_rtg)
             history_timesteps.append(t)
-            history_actions.append(prev_action.copy())
+            if len(history_actions) == 0:
+                history_actions.append(np.zeros(act_dim, dtype=np.float32))
 
             # Build context
             ctx_len = min(len(history_states), context_length)
@@ -165,8 +147,9 @@ def evaluate_policy(
 
             action = action_t.squeeze(0).cpu().numpy().astype(np.float32)
             action = np.clip(action, -1.0, 1.0)
-            prev_action = action.copy()
-            history_actions[-1] = action
+            # Append the executed action; the input action at the final context
+            # position is thus a_{t-1} (causal no-leakage convention).
+            history_actions.append(action)
 
             exec_action = action
             if force_perturb is not None:
@@ -210,8 +193,32 @@ def evaluate_policy(
     }
 
 
+def load_baseline_checkpoint(
+    model: nn.Module,
+    ckpt_dir: Path,
+    model_type: str,
+    device: torch.device,
+) -> bool:
+    """Load a trained baseline checkpoint if available.
+
+    Returns True if a trained checkpoint was loaded, False otherwise (in which case
+    the model is evaluated with random initialization and a warning is emitted).
+    """
+    ckpt_path = ckpt_dir / f"{model_type}_best.pt"
+    if ckpt_path.exists():
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        logger.info(f"Loaded trained baseline checkpoint: {ckpt_path}")
+        return True
+    logger.warning(
+        f"No trained checkpoint found at {ckpt_path}. "
+        f"Evaluating UNTRAINED (random init) model: {model_type}"
+    )
+    return False
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark HDML against SOTA baseline paradigms.")
+    parser = argparse.ArgumentParser(description="Benchmark HDML against trained baseline paradigms (fair comparison).")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per evaluation")
@@ -228,6 +235,7 @@ def main() -> None:
     cfg = HDMLConfig.from_yaml(cfg_path)
     device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
     logger.info(f"Execution hardware: {device}")
+    baseline_ckpt_dir = Path(ckpt_path).parent / "baselines"
 
     # 1. Instantiate HDML (Trained)
     hdml_model = HDMLModel.from_config(cfg.model).to(device)
@@ -242,26 +250,32 @@ def main() -> None:
     else:
         logger.warning("Checkpoint not found, evaluating with initialized weights.")
 
-    # 2. Instantiate SOTA Baselines
+    # 2. Instantiate SOTA Baselines (loading trained checkpoints when available)
     diffusion_model = DiffusionPolicyBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model, denoising_steps=10
     ).to(device)
+    load_baseline_checkpoint(diffusion_model, baseline_ckpt_dir, "diffusion", device)
 
     dt_model = DecisionTransformerBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model
     ).to(device)
+    load_baseline_checkpoint(dt_model, baseline_ckpt_dir, "dt", device)
 
     iql_model = IQLBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, hidden_dim=256
     ).to(device)
+    load_baseline_checkpoint(iql_model, baseline_ckpt_dir, "iql", device)
 
     rnn_model = DecisionRNNBaseline(
-        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model
+        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model,
+        num_layers=cfg.model.num_mamba_layers,
     ).to(device)
+    load_baseline_checkpoint(rnn_model, baseline_ckpt_dir, "rnn", device)
 
     mlp_model = MLPBCBaseline(
         prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, hidden_dim=256
     ).to(device)
+    load_baseline_checkpoint(mlp_model, baseline_ckpt_dir, "mlp", device)
 
     models_to_test = [
         ("HDML (Decision Mamba + Liquid CfC - Ours)", hdml_model, "hdml"),
@@ -273,7 +287,7 @@ def main() -> None:
     ]
 
     print("\n" + "=" * 115)
-    print(f"ACADEMIC SOTA BENCHMARK COMPARISON ON {cfg.env.env_name.upper()} (Standard & Perturbed Robustness)")
+    print(f"ACADEMIC BENCHMARK COMPARISON ON {cfg.env.env_name.upper()} (Standard & Perturbed Robustness, Trained Baselines)")
     print("=" * 115)
 
     results_std: list[dict[str, Any]] = []
