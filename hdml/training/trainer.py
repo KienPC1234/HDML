@@ -364,8 +364,8 @@ class HDMLTrainer:
                         "val/loss": val_metrics["val_loss"],
                         "val/action_loss": val_metrics["val_action_loss"],
                     })
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001 - logging must not crash training
+                    logger.warning(f"WandB validation logging error: {e}")
 
             val_str = f" | Val Loss: {val_metrics['val_loss']:.4f}" if "val_loss" in val_metrics else ""
             logger.info(
@@ -391,8 +391,8 @@ class HDMLTrainer:
             try:
                 import wandb
                 wandb.finish()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - logging must not crash training
+                logger.warning(f"WandB finish error: {e}")
 
         logger.info("HDML training completed successfully.")
         return history

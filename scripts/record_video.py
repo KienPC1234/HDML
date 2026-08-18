@@ -47,9 +47,28 @@ def record_episode_video(
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
 
-    env = gym.make(env_name, render_mode="rgb_array")
-    obs_dim = env.observation_space.shape[0]  # type: ignore
-    act_dim = env.action_space.shape[0]        # type: ignore
+    # For Ant-v5: by default the env returns 105-dim obs (with contact forces).
+    # If the model's prop_dim is 27 (no contact forces), recreate with use_contact_forces=False.
+    _tmp_env = gym.make(env_name, render_mode="rgb_array")
+    act_dim: int = _tmp_env.action_space.shape[0]  # type: ignore
+    raw_obs_dim: int = _tmp_env.observation_space.shape[0]  # type: ignore
+    _tmp_env.close()
+
+    # Detect model expected prop_dim from the fusion layer
+    model_prop_dim: int = getattr(model, "prop_dim", raw_obs_dim)
+    if hasattr(model, "fusion"):
+        model_prop_dim = getattr(model.fusion, "prop_dim", model_prop_dim)
+
+    if "Ant" in env_name and model_prop_dim != raw_obs_dim:
+        logger.info(
+            f"Ant-v5 obs mismatch: env={raw_obs_dim}, model={model_prop_dim}. "
+            f"Recreating env with include_cfrc_ext_in_observation=False."
+        )
+        env = gym.make(env_name, render_mode="rgb_array", include_cfrc_ext_in_observation=False)
+    else:
+        env = gym.make(env_name, render_mode="rgb_array")
+
+    obs_dim: int = env.observation_space.shape[0]  # type: ignore
 
     st_mean = state_mean if state_mean is not None else np.zeros(obs_dim, dtype=np.float32)
     st_std = state_std if state_std is not None else np.ones(obs_dim, dtype=np.float32)
@@ -71,7 +90,6 @@ def record_episode_video(
     context_length = 20
     cfc_hx = None
     current_subgoal = None
-    prev_action = np.zeros(act_dim, dtype=np.float32)
 
     logger.info(f"Recording video on {env_name} (Max Steps={max_steps}, Macro Interval={macro_interval})...")
 
@@ -91,7 +109,8 @@ def record_episode_video(
         history_states.append(norm_obs)
         history_rtgs.append(scaled_rtg)
         history_timesteps.append(t)
-        history_actions.append(prev_action.copy())
+        if len(history_actions) == 0:
+            history_actions.append(np.zeros(act_dim, dtype=np.float32))
 
         # Two-tier execution
         if t % macro_interval == 0 or current_subgoal is None:
@@ -131,8 +150,7 @@ def record_episode_video(
 
         action = action_tensor.squeeze(0).cpu().numpy().astype(np.float32)
         action = np.clip(action, -1.0, 1.0)
-        prev_action = action.copy()
-        history_actions[-1] = action
+        history_actions.append(action)
 
         exec_action = action
         if force_perturb is not None:
