@@ -16,11 +16,12 @@ By unifying **Selective State Space Models (Mamba / S6)** with **Closed-Form Con
 
 ---
 
-## Simulation Rollouts (Hardware EGL Accelerated)
+## Unitree A1 12-DOF Quadruped Physical Simulation & Telemetry HUD
 
-| Ant-v4 (Decoupled 10Hz/100Hz Macro Planning) | HalfCheetah-v5 (50,000 Step Dataset Rollout) |
-| :---: | :---: |
-| ![Ant-v4 HDML Rollout](videos/hdml_ant_v4_rollout.gif) | ![HalfCheetah-v5 HDML Rollout](videos/hdml_halfcheetah_v5_rollout.gif) |
+| Unitree A1 Robot Dog Physical Kick Recovery (Closed-Loop HDML) |
+| :---: |
+| ![Unitree A1 Kick Recovery Live Telemetry HUD](videos/unitree_a1_kick_hud_snapshot.png) |
+| **High-Efficiency MP4 Video (1.2 MB, 720p 30fps)**: [`videos/unitree_a1_robot_dog_kick_recovery.mp4`](videos/unitree_a1_robot_dog_kick_recovery.mp4) |
 
 ---
 
@@ -106,15 +107,15 @@ Evaluated under the NeurIPS 2021 `rliable` statistical protocol with 2,000 strat
 
 ### 3. Probability of Improvement (Mann-Whitney U Bootstrap Statistic: P(HDML > Baseline))
 
-- $P(\text{HDML-V2} > \text{Diffusion Policy}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
-- $P(\text{HDML-V2} > \text{MLP-BC}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
-- $P(\text{HDML-V2} > \text{Implicit Q-Learning}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
-- $P(\text{HDML-V2} > \text{Decision Transformer}) = 36.00\%$ [95% CI: 0.00% - 80.00%]
-- $P(\text{HDML-V2} > \text{Decision RNN}) = 16.00\%$ [95% CI: 0.00% - 60.00%]
+- $P(\text{HDML} > \text{Diffusion Policy}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
+- $P(\text{HDML} > \text{MLP-BC}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
+- $P(\text{HDML} > \text{Implicit Q-Learning}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
+- $P(\text{HDML} > \text{Decision Transformer}) = 36.00\%$ [95% CI: 0.00% - 80.00%]
+- $P(\text{HDML} > \text{Decision RNN}) = 16.00\%$ [95% CI: 0.00% - 60.00%]
 
 > **Key Findings (honest reading)**:
-> 1. **Perturbation Robustness (Decisive Strength of Liquid ODEs)**: Under stochastic force impulses and continuous sensor noise, **HDML-V2 dominates all baselines**, achieving a Perturbed IQM of **18.88 [9.85, 26.92]** (Return 2,037.60 ± 906.47), outperforming Decision RNN (7.14) by **2.6x** and Decision Transformer (1.17) by **16x**.
-> 2. **Standard Expert Imitation**: On clean standard rollouts, HDML-V2 achieves an IQM of **88.09** (Return ~9,208), delivering strong expert locomotion while maintaining a smoother Jerk profile (0.7862) than DT (0.8109) and Decision RNN (0.9689).
+> 1. **Perturbation Robustness (Decisive Strength of Liquid ODEs)**: Under stochastic force impulses and continuous sensor noise, **HDML dominates all baselines**, achieving a Perturbed IQM of **18.88 [9.85, 26.92]** (Return 2,037.60 ± 906.47), outperforming Decision RNN (7.14) by **2.6x** and Decision Transformer (1.17) by **16x**.
+> 2. **Standard Expert Imitation**: On clean standard rollouts, HDML achieves an IQM of **88.09** (Return ~9,208), delivering strong expert locomotion while maintaining a smoother Jerk profile (0.7862) than DT (0.8109) and Decision RNN (0.9689).
 > 3. **Statistical Integrity**: All scores are reported with 95% stratified bootstrap confidence intervals following the `rliable` protocol without cherry-picking.
 
 ---
