@@ -253,14 +253,22 @@ class TrajectoryCollector:
 
         trajectories: list[dict[str, np.ndarray]] = []
         for i in range(num_trajectories):
+            obs = loaded[f"traj_{i}_observations"]
+            acts = loaded[f"traj_{i}_actions"]
+            rews = loaded[f"traj_{i}_rewards"]
+            rtgs = loaded[f"traj_{i}_returns_to_go"]
+            dones = loaded[f"traj_{i}_dones"] if f"traj_{i}_dones" in loaded else (loaded[f"traj_{i}_terminals"] if f"traj_{i}_terminals" in loaded else np.zeros(len(rews), dtype=bool))
+            timesteps = loaded[f"traj_{i}_timesteps"] if f"traj_{i}_timesteps" in loaded else np.arange(len(rews), dtype=np.int64)
+            total_ret = loaded[f"traj_{i}_total_return"] if f"traj_{i}_total_return" in loaded else float(np.sum(rews))
+
             traj = {
-                "observations": loaded[f"traj_{i}_observations"],
-                "actions": loaded[f"traj_{i}_actions"],
-                "rewards": loaded[f"traj_{i}_rewards"],
-                "returns_to_go": loaded[f"traj_{i}_returns_to_go"],
-                "dones": loaded[f"traj_{i}_dones"],
-                "timesteps": loaded[f"traj_{i}_timesteps"],
-                "total_return": loaded[f"traj_{i}_total_return"],
+                "observations": obs,
+                "actions": acts,
+                "rewards": rews,
+                "returns_to_go": rtgs,
+                "dones": dones,
+                "timesteps": timesteps,
+                "total_return": total_ret,
             }
             trajectories.append(traj)
 
