@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from hdml.models.fusion import CrossModalFusion, VisualPatchEncoder
 from hdml.models.backbone import MambaCognitiveBackbone, MambaBlock
-from hdml.models.liquid_head import LiquidReactiveControlHead
+from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone, Mamba3Block
+from hdml.models.liquid_head import CfCActionFilter
+from hdml.models.flow_policy import FlowPolicy, FlowVelocityField, GaussianActionPolicy
+from hdml.models.hiqc_critic import HiQCCritic
 from hdml.models.hdml_model import HDMLModel
 from hdml.models.baselines import (
     DecisionTransformerBaseline,
@@ -11,17 +14,21 @@ from hdml.models.baselines import (
     IQLBaseline,
     MLPBCBaseline,
 )
-from hdml.models.ablations import (
-    MambaMLPHeadAblation,
-    TransformerLiquidHeadAblation,
-)
+from hdml.models.ablations import MambaMLPHeadAblation, TransformerLiquidHeadAblation
+
 
 __all__ = [
     "CrossModalFusion",
     "VisualPatchEncoder",
     "MambaCognitiveBackbone",
     "MambaBlock",
-    "LiquidReactiveControlHead",
+    "Mamba3CognitiveBackbone",
+    "Mamba3Block",
+    "CfCActionFilter",
+    "FlowPolicy",
+    "FlowVelocityField",
+    "GaussianActionPolicy",
+    "HiQCCritic",
     "HDMLModel",
     "DecisionTransformerBaseline",
     "DecisionRNNBaseline",

@@ -18,15 +18,16 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train HDML Offline Decision Mamba policy.")
-    parser.add_argument("--config", type=str, default="configs/ant_v4_default.yaml", help="Path to config YAML")
-    parser.add_argument("--dataset", type=str, default="data/ant_v4_trajectories.npz", help="Path to dataset NPZ")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
+    parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_expert.npz", help="Path to dataset NPZ")
     parser.add_argument("--device", type=str, default="cuda", help="Training device (cuda or cpu)")
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     parser.add_argument("--amp", action="store_true", default=True, help="Enable automatic mixed precision (AMP)")
     parser.add_argument("--no-amp", action="store_false", dest="amp", help="Disable AMP")
-    parser.add_argument("--num-workers", type=int, default=4, help="DataLoader worker processes")
+    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
+    parser.add_argument("--stride", type=int, default=4, help="Subsampling stride along trajectories for high-speed training")
     parser.add_argument("--fast-data", action="store_true", default=True, help="Use pre-vectorized contiguous tensor dataset")
     parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases cloud logging")
     parser.add_argument("--wandb-project", type=str, default="hdml-robotics", help="WandB project name")
@@ -84,6 +85,8 @@ def main() -> None:
         trajectories=train_trajs,
         context_length=cfg.training.context_length,
         scale_return=cfg.env.scale_return,
+        gamma=cfg.training.gamma,
+        stride=args.stride,
     )
 
     val_dataset = dataset_cls(
@@ -92,6 +95,8 @@ def main() -> None:
         scale_return=cfg.env.scale_return,
         state_mean=train_dataset.state_mean,
         state_std=train_dataset.state_std,
+        gamma=cfg.training.gamma,
+        stride=args.stride,
     ) if val_trajs else None
 
     # Update model dimensions from dataset

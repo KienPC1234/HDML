@@ -26,7 +26,7 @@ def test_mamba_backbone_forward_shapes(device: torch.device) -> None:
     ).to(device)
 
     u_t = torch.randn(batch_size, seq_len, d_model, device=device)
-    subgoals, values, latent = backbone(u_t)
+    subgoals, latent, values, next_states_pred = backbone(u_t)
 
     assert subgoals.shape == (batch_size, seq_len, d_subgoal)
     assert values.shape == (batch_size, seq_len, 1)
@@ -46,9 +46,9 @@ def test_mamba_backbone_gradients(device: torch.device) -> None:
     ).to(device)
 
     u_t = torch.randn(2, 8, 64, device=device, requires_grad=True)
-    subgoals, values, _ = backbone(u_t)
+    subgoals, latent, values, next_states_pred = backbone(u_t)
 
-    loss = subgoals.sum() + values.sum()
+    loss = subgoals.sum() + values.sum() + next_states_pred.sum()
     loss.backward()
 
     assert u_t.grad is not None

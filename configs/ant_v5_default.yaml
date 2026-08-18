@@ -10,10 +10,10 @@ model:
   cfc_units: 32
   cfc_backbone_units: 64
   cfc_backbone_layers: 1
+  cfc_residual: 0.5
   use_visual: false
   dropout: 0.1
-  device: "cuda"
-
+  device: cuda
 training:
   learning_rate: 0.0003
   weight_decay: 0.0001
@@ -23,19 +23,22 @@ training:
   context_length: 20
   gamma: 0.99
   grad_clip_norm: 1.0
-  action_loss_weight: 1.0
-  subgoal_loss_weight: 0.1
-  reg_loss_weight: 0.01
   eval_interval: 2
   save_interval: 5
   seed: 42
-  output_dir: "checkpoints/ant_v5"
-  log_dir: "logs/ant_v5"
-
+  output_dir: checkpoints/ant_v5
+  log_dir: logs/ant_v5
+  flow_weight: 1.0
+  q_weight: 1.0
+  pave_weight: 0.1
+  dynamics_weight: 0.1
+  use_advantage_weighting: true
+  advantage_temperature: 1.0
+  grad_caps_weight: 0.05
 env:
-  env_name: "Ant-v5"
+  env_name: Ant-v5
   max_episode_steps: 1000
-  target_return: 3000.0
+  target_return: -40.0
   scale_return: 1000.0
   num_eval_episodes: 5
   seed: 42

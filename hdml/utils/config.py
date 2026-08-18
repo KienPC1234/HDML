@@ -11,6 +11,7 @@ class ModelConfig:
     """Configuration parameters for the HDML model architecture."""
     prop_dim: int = 27
     action_dim: int = 8
+    chunk_size: int = 4  # HDML-V2 Action Chunking size
     d_model: int = 128
     d_state: int = 16
     d_conv: int = 4
@@ -20,10 +21,12 @@ class ModelConfig:
     cfc_units: int = 32
     cfc_backbone_units: int = 64
     cfc_backbone_layers: int = 1
+    cfc_residual: float = 0.5
     use_visual: bool = False
     visual_channels: int = 1
     visual_image_size: int = 64
     dropout: float = 0.1
+    action_policy: str = "gaussian"  # "gaussian" (BC regressor) or "flow" (flow matching)
     device: str = "cuda"
 
 
@@ -38,11 +41,17 @@ class TrainingConfig:
     context_length: int = 20
     gamma: float = 0.99
     grad_clip_norm: float = 1.0
-    action_loss_weight: float = 1.0
-    subgoal_loss_weight: float = 0.1
+    flow_weight: float = 1.0
+    q_weight: float = 1.0
+    value_weight: float = 1.0
+    pave_weight: float = 0.1
+    grad_caps_weight: float = 0.05
+    dynamics_weight: float = 0.1
     reg_loss_weight: float = 0.01
-    use_advantage_weighting: bool = False
+    subgoal_loss_weight: float = 0.1
+    use_advantage_weighting: bool = True
     advantage_temperature: float = 1.0
+    cfc_residual: float = 0.5
     eval_interval: int = 5
     save_interval: int = 5
     seed: int = 42

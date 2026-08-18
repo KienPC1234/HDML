@@ -1,0 +1,83 @@
+HDML-V2 RLIABLE BENCHMARK RESULTS - HalfCheetah-v5
+====================================================================================================
+
+STANDARD BENCHMARK:
+- HDML (Decision Mamba + Liquid CfC - Ours):
+    IQM (95% CI): 88.09 [41.43, 98.51]
+    D4RL Mean Score: 76.43
+    Raw Return: 9208.69 +/- 3683.75
+    Smoothness (Jerk): 0.7862
+    Inference Latency: 12.93 ms (77.3 Hz)
+    Parameters: 1,441,713
+
+- Diffusion Policy (DDPM 10-step Denoising):
+    IQM (95% CI): -0.11 [-0.46, 0.53]
+    D4RL Mean Score: -0.04
+    Raw Return: -285.21 +/- 59.59
+    Smoothness (Jerk): 1.2983
+    Inference Latency: 6.71 ms (148.9 Hz)
+    Parameters: 153,606
+
+- Decision Transformer (Causal Attention DT):
+    IQM (95% CI): 95.60 [25.36, 107.79]
+    D4RL Mean Score: 79.10
+    Raw Return: 9540.62 +/- 5127.89
+    Smoothness (Jerk): 0.8109
+    Inference Latency: 2.25 ms (444.9 Hz)
+    Parameters: 1,206,918
+
+- Implicit Q-Learning (IQL / Value-Advantage):
+    IQM (95% CI): 1.84 [1.79, 2.26]
+    D4RL Mean Score: 1.95
+    Raw Return: -38.30 +/- 31.20
+    Smoothness (Jerk): 0.0080
+    Inference Latency: 0.25 ms (4051.6 Hz)
+    Parameters: 286,985
+
+- Decision RNN (LSTM Recurrent Policy):
+    IQM (95% CI): 113.91 [89.56, 115.45]
+    D4RL Mean Score: 107.21
+    Raw Return: 13029.75 +/- 1775.50
+    Smoothness (Jerk): 0.9689
+    Inference Latency: 1.05 ms (953.5 Hz)
+    Parameters: 1,008,390
+
+- MLP-BC (Standard Feedforward Reactive):
+    IQM (95% CI): -0.26 [-0.26, -0.24]
+    D4RL Mean Score: -0.26
+    Raw Return: -311.94 +/- 1.36
+    Smoothness (Jerk): 0.0028
+    Inference Latency: 0.30 ms (3294.2 Hz)
+    Parameters: 72,198
+
+PERTURBATION ROBUSTNESS BENCHMARK:
+- HDML (Decision Mamba + Liquid CfC - Ours):
+    Perturbed IQM (95% CI): 18.88 [9.85, 26.92]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 0.6552
+
+- Diffusion Policy (DDPM 10-step Denoising):
+    Perturbed IQM (95% CI): -0.44 [-1.05, -0.05]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 1.2760
+
+- Decision Transformer (Causal Attention DT):
+    Perturbed IQM (95% CI): 1.17 [0.32, 4.19]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 0.3118
+
+- Implicit Q-Learning (IQL / Value-Advantage):
+    Perturbed IQM (95% CI): 2.11 [2.03, 2.32]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 0.1174
+
+- Decision RNN (LSTM Recurrent Policy):
+    Perturbed IQM (95% CI): 7.14 [4.22, 10.71]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 0.3844
+
+- MLP-BC (Standard Feedforward Reactive):
+    Perturbed IQM (95% CI): -0.34 [-0.40, -0.30]
+    Survival Rate: 100.0%
+    Smoothness (Jerk): 0.3385
+

@@ -22,13 +22,19 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self,
         trajectories: Sequence[dict[str, np.ndarray]],
         context_length: int = 20,
+        chunk_size: int = 4,
         scale_return: float = 1000.0,
         state_mean: np.ndarray | None = None,
         state_std: np.ndarray | None = None,
+        gamma: float = 0.99,
+        stride: int = 1,
     ) -> None:
         super().__init__()
         self.context_length = context_length
+        self.chunk_size = chunk_size
         self.scale_return = scale_return
+        self.gamma = gamma
+        self.stride = stride
         self.trajectories = list(trajectories)
 
         if len(self.trajectories) == 0:
@@ -48,59 +54,98 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         else:
             self.state_std = np.asarray(state_std, dtype=np.float32) + 1e-6
 
-        # Fast vectorized sliding window buffer creation.
-        #
-        # Causal action-input convention (no leakage, standard Decision-Transformer
-        # formulation): the model input action at position j is the action executed
-        # at the *previous* step (a_{t+j-1}), and the prediction target is a_{t+j}.
-        # To achieve this, the action array is padded with one leading zero row so
-        # that window i contains [a_{i-1}, a_i, ..., a_{i+k-2}] (a_{-1} == 0 for the
-        # first step of each trajectory).
+        # Fast vectorized sliding window buffer creation with configurable stride.
         k = self.context_length
+        c = self.chunk_size
         all_states_list: list[np.ndarray] = []
         all_actions_list: list[np.ndarray] = []
         all_target_actions_list: list[np.ndarray] = []
+        all_target_chunks_list: list[np.ndarray] = []
         all_rtgs_list: list[np.ndarray] = []
         all_time_list: list[np.ndarray] = []
         all_mask_list: list[np.ndarray] = []
+        all_reward_chunks_list: list[np.ndarray] = []
+        all_next_states_list: list[np.ndarray] = []
 
         for traj in self.trajectories:
-            raw_states = (traj["observations"] - self.state_mean) / self.state_std
-            raw_actions = traj["actions"]
-            raw_rtgs = (traj["returns_to_go"] / self.scale_return).reshape(-1, 1)
-            raw_timesteps = traj["timesteps"]
+            raw_states = (traj["observations"].astype(np.float32) - self.state_mean) / self.state_std
+            raw_actions = traj["actions"].astype(np.float32)
+            raw_rtgs = (traj["returns_to_go"].astype(np.float32) / self.scale_return).reshape(-1, 1)
+            raw_time = traj["timesteps"].astype(np.int64)
             traj_len = len(raw_states)
 
+            # Pad states, actions, and RTGs for sliding windows
             pad_states = np.pad(raw_states, ((0, k), (0, 0)), mode="constant")
+            # Causal action input padding: a_{-1} = 0
             pad_actions = np.pad(raw_actions, ((1, k), (0, 0)), mode="constant")
+            tgt_pad_actions = np.pad(raw_actions, ((0, k), (0, 0)), mode="constant")
             pad_rtgs = np.pad(raw_rtgs, ((0, k), (0, 0)), mode="constant")
-            pad_time = np.pad(raw_timesteps, (0, k), mode="constant")
+            pad_time = np.pad(raw_time, (0, k), mode="constant")
 
             s_windows = np.lib.stride_tricks.sliding_window_view(pad_states, (k, self.prop_dim))[:traj_len, 0, :, :]
             a_windows = np.lib.stride_tricks.sliding_window_view(pad_actions, (k, self.action_dim))[:traj_len, 0, :, :]
-            tgt_pad_actions = np.pad(raw_actions, ((0, k), (0, 0)), mode="constant")
             tgt_a_windows = np.lib.stride_tricks.sliding_window_view(tgt_pad_actions, (k, self.action_dim))[:traj_len, 0, :, :]
+            
+            # Action Chunking (HiQC): Extract a chunk of size `c` for each timestep in the context window
+            tgt_chunk_pad = np.pad(raw_actions, ((0, k + c), (0, 0)), mode="constant")
+            chunk_strides = tgt_chunk_pad.strides
+            chunk_shape = (traj_len, k, c, self.action_dim)
+            chunk_strd = (chunk_strides[0], chunk_strides[0], chunk_strides[0], chunk_strides[1])
+            tgt_chunks = np.lib.stride_tricks.as_strided(tgt_chunk_pad, shape=chunk_shape, strides=chunk_strd)
+            
             r_windows = np.lib.stride_tricks.sliding_window_view(pad_rtgs, (k, 1))[:traj_len, 0, :, :]
             t_windows = np.lib.stride_tricks.sliding_window_view(pad_time, k)[:traj_len]
+
+            # HiQC Bellman target: discounted c-step reward sum R_c[t] = sum_m gamma^m r_{t+m}
+            if "rewards" in traj:
+                scaled_rewards = traj["rewards"].astype(np.float32) / self.scale_return
+            else:
+                rtg = traj["returns_to_go"].astype(np.float32)
+                raw_rewards = rtg.copy()
+                raw_rewards[:-1] = rtg[:-1] - self.gamma * rtg[1:]
+                raw_rewards[-1] = rtg[-1]
+                scaled_rewards = raw_rewards / self.scale_return
+            r_c = np.zeros(traj_len, dtype=np.float32)
+            for m in range(c):
+                shifted = np.zeros(traj_len, dtype=np.float32)
+                if m < traj_len:
+                    shifted[: traj_len - m] = scaled_rewards[m:]
+                r_c += (self.gamma ** m) * shifted
+            pad_rc = np.pad(r_c, (0, k), mode="constant")
+            reward_chunks = np.lib.stride_tricks.sliding_window_view(pad_rc, k)[:traj_len].reshape(traj_len, k, 1)
+
+            # Next state after the action chunk: s_{t+c}
+            next_state_arr = np.zeros_like(raw_states, dtype=np.float32)
+            if traj_len > c:
+                next_state_arr[: traj_len - c] = raw_states[c:]
+            pad_ns = np.pad(next_state_arr, ((0, k), (0, 0)), mode="constant")
+            next_states = np.lib.stride_tricks.sliding_window_view(pad_ns, (k, self.prop_dim))[:traj_len, 0, :, :]
 
             # Vectorized mask construction
             steps_remaining = np.maximum(0, np.minimum(k, traj_len - np.arange(traj_len)))
             col_indices = np.arange(k)
             masks = (col_indices < steps_remaining[:, None]).astype(np.float32)
 
-            all_states_list.append(s_windows)
-            all_actions_list.append(a_windows)
-            all_target_actions_list.append(tgt_a_windows)
-            all_rtgs_list.append(r_windows)
-            all_time_list.append(t_windows)
-            all_mask_list.append(masks)
+            st = self.stride
+            all_states_list.append(s_windows[::st])
+            all_actions_list.append(a_windows[::st])
+            all_target_actions_list.append(tgt_a_windows[::st])
+            all_target_chunks_list.append(tgt_chunks[::st])
+            all_rtgs_list.append(r_windows[::st])
+            all_time_list.append(t_windows[::st])
+            all_mask_list.append(masks[::st])
+            all_reward_chunks_list.append(reward_chunks[::st])
+            all_next_states_list.append(next_states[::st])
 
         states_buf = np.ascontiguousarray(np.concatenate(all_states_list, axis=0), dtype=np.float32)
         actions_buf = np.ascontiguousarray(np.concatenate(all_actions_list, axis=0), dtype=np.float32)
         target_actions_buf = np.ascontiguousarray(np.concatenate(all_target_actions_list, axis=0), dtype=np.float32)
+        target_chunks_buf = np.ascontiguousarray(np.concatenate(all_target_chunks_list, axis=0), dtype=np.float32)
         rtgs_buf = np.ascontiguousarray(np.concatenate(all_rtgs_list, axis=0), dtype=np.float32)
         timesteps_buf = np.ascontiguousarray(np.concatenate(all_time_list, axis=0), dtype=np.int64)
         mask_buf = np.ascontiguousarray(np.concatenate(all_mask_list, axis=0), dtype=np.float32)
+        reward_chunks_buf = np.ascontiguousarray(np.concatenate(all_reward_chunks_list, axis=0), dtype=np.float32)
+        next_states_buf = np.ascontiguousarray(np.concatenate(all_next_states_list, axis=0), dtype=np.float32)
 
         self.states = torch.from_numpy(states_buf)
         self.actions = torch.from_numpy(actions_buf)
@@ -110,7 +155,10 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         # Prediction targets are the un-shifted actions of the same window positions;
         # the shifted input actions are stored in self.actions.
         self.target_actions = torch.from_numpy(target_actions_buf)
+        self.target_chunks = torch.from_numpy(target_chunks_buf)
         self.target_rtgs = self.rtgs.clone()
+        self.reward_chunks = torch.from_numpy(reward_chunks_buf)
+        self.next_states = torch.from_numpy(next_states_buf)
 
         total_samples = self.states.shape[0]
         logger.info(
@@ -129,7 +177,10 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             "timesteps": self.timesteps[index],
             "mask": self.mask[index],
             "target_actions": self.target_actions[index],
+            "target_chunks": self.target_chunks[index],
             "target_rtgs": self.target_rtgs[index],
+            "reward_chunks": self.reward_chunks[index],
+            "next_states": self.next_states[index],
         }
 
 

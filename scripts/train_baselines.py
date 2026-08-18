@@ -78,7 +78,7 @@ def build_model(model_type: str, cfg: HDMLConfig) -> torch.nn.Module:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SOTA baseline architectures for fair benchmarking.")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
-    parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_trajectories.npz", help="Path to dataset NPZ")
+    parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_expert.npz", help="Path to dataset NPZ")
     parser.add_argument("--model", type=str, default="all", choices=["all", *MODEL_FACTORY], help="Baseline model to train")
     parser.add_argument("--device", type=str, default="cuda", help="Training device (cuda or cpu)")
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
