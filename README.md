@@ -116,6 +116,9 @@ python scripts/export_onnx.py \
 
 ## Quickstart & Reproducibility
 
+> [!TIP]
+> For a comprehensive, step-by-step reproduction guide covering all benchmarks, multi-room AntBot labyrinths, baseline comparisons, and ONNX deployment, see **[REPRODUCIBILITY.md](REPRODUCIBILITY.md)**.
+
 ### Environment Setup
 
 ```bash
