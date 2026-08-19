@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=str, default="configs/pointmaze_umaze_unsupervised.yaml")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/pointmaze_umaze/best_model.pt")
     parser.add_argument("--dataset", type=str, default="D4RL/pointmaze/umaze-v2")
-    parser.add_argument("--num-eval-trajs", type=int, default=50)
+    parser.add_argument("--num-eval-trajs", "--episodes", dest="num_eval_trajs", type=int, default=50)
     parser.add_argument("--device", type=str, default="cuda")
     return parser.parse_args()
 
