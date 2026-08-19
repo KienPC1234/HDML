@@ -5,7 +5,6 @@ import os
 import argparse
 import logging
 from pathlib import Path
-import shutil
 import cv2
 import imageio
 import numpy as np
@@ -211,12 +210,6 @@ def record_maze_solver(
 
     imageio.mimsave(out_gif, frames[::2], duration=50, loop=0)
     imageio.mimsave(out_mp4, frames, fps=30)
-
-    # Copy to artifact directory for UI display
-    artifact_dir = Path("/home/kien/.gemini/antigravity-ide/brain/d6d46bb5-1461-41b6-9adb-f0da469ccff6")
-    if artifact_dir.exists():
-        shutil.copy(out_gif, artifact_dir / "pointmaze_hdml_solved.gif")
-        shutil.copy(out_mp4, artifact_dir / "pointmaze_hdml_solved.mp4")
 
     acts_np = np.array(actions_list, dtype=np.float32)
     jerk = compute_action_smoothness(acts_np)

@@ -5,7 +5,7 @@
 
 ## 1. System Ecosystem & Library Architecture
 
-To realize the **HDML (Hierarchical Decision Mamba-Liquid)** architecture formulated in [research.md](file:///data/HDML_Model/research.md), the codebase integrates four foundational technological pillars:
+To realize the **HDML (Hierarchical Decision Mamba-Liquid)** architecture formulated in [research.md](research.md), the codebase integrates four foundational technological pillars:
 
 ```
 +---------------------------------------------------------------------------------------+

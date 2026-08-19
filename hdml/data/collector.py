@@ -249,7 +249,12 @@ class TrajectoryCollector:
             raise FileNotFoundError(f"Dataset not found at {path}")
 
         loaded = np.load(path, allow_pickle=True)
-        num_trajectories = int(loaded["num_trajectories"])
+        if "num_trajectories" in loaded:
+            num_trajectories = int(loaded["num_trajectories"])
+        else:
+            # Infer num_trajectories by counting traj_{i}_observations
+            obs_keys = [k for k in loaded.files if k.startswith("traj_") and k.endswith("_observations")]
+            num_trajectories = len(obs_keys)
 
         trajectories: list[dict[str, np.ndarray]] = []
         for i in range(num_trajectories):
