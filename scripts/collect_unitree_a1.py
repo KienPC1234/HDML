@@ -15,35 +15,64 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("CollectUnitreeA1")
 
 
+def leg_ik(x: float, z: float, l1: float = 0.20, l2: float = 0.20) -> tuple[float, float]:
+    """Analytic 2-Link Inverse Kinematics for Unitree A1 thigh and calf."""
+    r2 = x**2 + z**2
+    r = math.sqrt(r2)
+    cos_q2 = max(-1.0, min(1.0, (r2 - l1**2 - l2**2) / (2 * l1 * l2)))
+    q2 = -math.acos(cos_q2)  # backward knee
+    beta = math.atan2(-x, -z)
+    cos_gamma = max(-1.0, min(1.0, r / (2 * l1)))
+    gamma = math.acos(cos_gamma)
+    q1 = beta + gamma
+    return q1, q2
+
+
 class UnitreeA1CPGPolicy:
-    """12-DOF Dynamic Phase-Coupled Trot Gait with Balance Feedback for Unitree A1."""
+    """12-DOF Dynamic Phase-Coupled Raibert Trot Gait with Analytic IK and Balance Feedback for Unitree A1."""
 
     def __init__(self, seed: int = 42) -> None:
         self.rng = np.random.default_rng(seed)
-        self.freq = 2.0  # 2 Hz trot
-        # Diagonal leg phases: FR & RL in phase 0, FL & RR in phase pi
-        self.phases = np.array([0.0, np.pi, np.pi, 0.0], dtype=np.float32)
+        self.freq = 2.2  # 2.2 Hz dynamic trot
+        self.stride = 0.09
+        self.height_nom = 0.26
+        self.clearance = 0.045
+        # Diagonal leg phases: FR (0), FL (0.5), RR (0.5), RL (0.0)
+        self.phases = np.array([0.0, 0.5, 0.5, 0.0], dtype=np.float32)
 
     def __call__(self, obs: np.ndarray, step: int, noise_level: float = 0.05) -> np.ndarray:
         t = step * 0.02
         # obs: [torso_z, quat_w, quat_x, quat_y, quat_z, ...]
         w, x_q, y_q, z_q = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
-        roll = float(np.arctan2(2 * (w * x_q + y_q * z_q), 1 - 2 * (x_q * x_q + y_q * y_q)))
-        pitch = float(np.arcsin(np.clip(2 * (w * y_q - z_q * x_q), -1.0, 1.0)))
-        yaw = float(np.arctan2(2 * (w * z_q + x_q * y_q), 1 - 2 * (y_q * y_q + z_q * z_q)))
+        roll = float(math.atan2(2 * (w * x_q + y_q * z_q), 1 - 2 * (x_q * x_q + y_q * y_q)))
+        pitch = float(math.asin(max(-1.0, min(1.0, 2 * (w * y_q - z_q * x_q)))))
+        yaw = float(math.atan2(2 * (w * z_q + x_q * y_q), 1 - 2 * (y_q * y_q + z_q * z_q)))
 
         actions = np.zeros(12, dtype=np.float32)
         for i in range(4):
-            phase = self.phases[i]
-            hip_stab = -0.12 * roll - 0.05 * yaw
-            yaw_diff = 0.08 * yaw if (i in [0, 2]) else -0.08 * yaw
-            thigh_osc = 0.22 * np.sin(2.0 * t * 2 * np.pi + phase) + yaw_diff
-            calf_osc = 0.22 * np.cos(2.0 * t * 2 * np.pi + phase)
-            pitch_corr = -0.2 * pitch if (i in [0, 1]) else 0.2 * pitch
+            phi = (self.freq * t + self.phases[i]) % 1.0
 
-            actions[i * 3 + 0] = np.clip(hip_stab / 0.20, -1.0, 1.0)
-            actions[i * 3 + 1] = np.clip((thigh_osc + pitch_corr) / 0.30, -1.0, 1.0)
-            actions[i * 3 + 2] = np.clip(calf_osc / 0.30, -1.0, 1.0)
+            if phi < 0.5:
+                # Stance phase: smooth linear rearward push on the ground
+                s = phi / 0.5
+                x_f = self.stride * (0.5 - s)
+                z_f = -self.height_nom
+            else:
+                # Swing phase: smooth elliptical forward step with clearance
+                s = (phi - 0.5) / 0.5
+                x_f = -self.stride * math.cos(math.pi * s)
+                z_f = -self.height_nom + self.clearance * math.sin(math.pi * s)
+
+            q1, q2 = leg_ik(x_f, z_f)
+
+            # Restorative balance control
+            hip_stab = -0.10 * roll - 0.05 * yaw
+            pitch_corr = -0.15 * pitch if (i in [0, 1]) else 0.15 * pitch
+
+            # Map to normalized actions around base (q1 base 0.85, q2 base -1.80)
+            actions[i * 3 + 0] = float(np.clip(hip_stab / 0.20, -1.0, 1.0))
+            actions[i * 3 + 1] = float(np.clip(((q1 + pitch_corr) - 0.85) / 0.30, -1.0, 1.0))
+            actions[i * 3 + 2] = float(np.clip((q2 - (-1.80)) / 0.30, -1.0, 1.0))
 
         noise = self.rng.normal(0.0, noise_level, size=actions.shape).astype(np.float32)
         return np.clip(actions + noise, -1.0, 1.0)
@@ -51,7 +80,7 @@ class UnitreeA1CPGPolicy:
 
 def collect_unitree_a1_dataset(
     output_path: str = "data/unitree_a1_trajectories.npz",
-    num_episodes: int = 100,
+    num_episodes: int = 200,
     max_steps_per_episode: int = 500,
     gamma: float = 0.99,
 ) -> None:
