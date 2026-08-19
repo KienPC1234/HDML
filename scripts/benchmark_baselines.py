@@ -372,14 +372,14 @@ def main() -> None:
     hdml_std_scores = results_std[0]["norm_scores_array"]
     for res in results_std[1:]:
         p_val, p_lo, p_hi = compute_probability_of_improvement(hdml_std_scores, res["norm_scores_array"])
-        print(f"  P( HDML-V2 > {res['name']:<42} ) = {p_val * 100.0:6.2f}%  [95% CI: {p_lo * 100.0:5.2f}% - {p_hi * 100.0:5.2f}%]")
+        print(f"  P( HDML > {res['name']:<42} ) = {p_val * 100.0:6.2f}%  [95% CI: {p_lo * 100.0:5.2f}% - {p_hi * 100.0:5.2f}%]")
     print("-" * 125 + "\n")
 
     # Save to results text file
     res_file = Path("results") / f"benchmark_{cfg.env.env_name.lower()}.txt"
     res_file.parent.mkdir(parents=True, exist_ok=True)
     with open(res_file, "w") as f:
-        f.write(f"HDML-V2 RLIABLE BENCHMARK RESULTS - {cfg.env.env_name}\n")
+        f.write(f"HDML RLIABLE BENCHMARK RESULTS - {cfg.env.env_name}\n")
         f.write("=" * 100 + "\n\n")
         f.write("STANDARD BENCHMARK:\n")
         for res in results_std:

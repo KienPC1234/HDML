@@ -11,7 +11,7 @@ class ModelConfig:
     """Configuration parameters for the HDML model architecture."""
     prop_dim: int = 27
     action_dim: int = 8
-    chunk_size: int = 4  # HDML-V2 Action Chunking size
+    chunk_size: int = 4  # HDML Action Chunking size
     d_model: int = 128
     d_state: int = 16
     d_conv: int = 4
