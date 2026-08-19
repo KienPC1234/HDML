@@ -1,0 +1,58 @@
+# HDML-Foundation: Base Pre-training Configuration
+# Optimized for NVIDIA GeForce RTX 4070 SUPER (12GB VRAM)
+
+model:
+  d_model: 384
+  num_mamba_layers: 8
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  cfc_units: 96
+  cfc_backbone_units: 192
+  cfc_residual: 0.05
+  max_timesteps: 4096
+  max_embodiments: 32
+  dropout: 0.1
+  device: cuda
+
+training:
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  warmup_steps: 500
+  max_epochs: 20
+  batch_size: 64
+  context_length: 30
+  gamma: 0.99
+  grad_clip_norm: 1.0
+  eval_interval: 2
+  save_interval: 5
+  seed: 42
+  use_amp: true
+  amp_dtype: bfloat16
+  num_workers: 2
+  pin_memory: true
+  output_dir: checkpoints/hdml_foundation
+  log_dir: logs/hdml_foundation
+
+  # Loss Weights
+  action_weight: 1.0
+  rtg_weight: 0.1
+  intent_weight: 0.01
+
+embodiments:
+  halfcheetah:
+    prop_dim: 17
+    action_dim: 6
+    path: data/halfcheetah_v5_expert.npz
+  ant:
+    prop_dim: 27
+    action_dim: 8
+    path: data/ant_v5_expert.npz
+  hopper:
+    prop_dim: 11
+    action_dim: 3
+    path: data/hopper_v5_expert.npz
+  unitree_a1_maze:
+    prop_dim: 53
+    action_dim: 12
+    path: data/unitree_a1_maze_trajectories.npz
