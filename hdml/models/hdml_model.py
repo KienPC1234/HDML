@@ -75,7 +75,7 @@ class HDMLModel(nn.Module):
             dropout=dropout,
         )
 
-        # 2. Mamba-3 Cognitive Planning Backbone (HDML-V2)
+        # 2. Mamba-3 Cognitive Planning Backbone (HDML)
         self.mamba_backbone = Mamba3CognitiveBackbone(
             d_model=d_model,
             d_state=d_state,

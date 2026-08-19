@@ -26,7 +26,7 @@ class HDMLTrainer:
       - Linear Warmup + Cosine Annealing learning rate schedule
       - Gradient clipping and NaN/Inf safeguards
       - Model checkpointing and loss logging
-      - Flow Matching and PAVE computation for HDML-V2
+      - Flow Matching and PAVE computation for HDML
     """
 
     def __init__(
@@ -93,7 +93,7 @@ class HDMLTrainer:
             self.amp_dtype = torch.float16
             self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
-        # Loss Function for HDML-V2
+        # Loss Function for HDML
         self.criterion = HDMLLoss(
             flow_weight=self.config.flow_weight,
             q_weight=self.config.q_weight,

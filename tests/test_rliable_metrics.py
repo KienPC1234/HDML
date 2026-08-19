@@ -57,9 +57,9 @@ def test_performance_profile():
 
 def test_generate_rliable_summary_plot(tmp_path: Path):
     res_dict = {
-        "HDML-V2 (Ours)": np.array([92.0, 95.0, 91.0, 96.0, 94.0, 93.0]),
-        "Diffusion Policy": np.array([85.0, 82.0, 88.0, 84.0, 86.0, 83.0]),
-        "Decision Transformer": np.array([80.0, 78.0, 83.0, 81.0, 79.0, 82.0]),
+        "HDML (Ours)": np.array([92.0, 95.0, 91.0, 96.0, 94.0, 93.0]),
+        "Decision Transformer": np.array([85.0, 82.0, 89.0, 86.0, 84.0, 88.0]),
+        "Diffusion Policy": np.array([78.0, 80.0, 75.0, 82.0, 79.0, 81.0]),
     }
     plot_file = tmp_path / "test_rliable.png"
     out = generate_rliable_summary_plot(res_dict, env_name="HalfCheetah-v5", save_path=str(plot_file))
