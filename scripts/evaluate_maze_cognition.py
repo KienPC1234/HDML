@@ -10,6 +10,7 @@ import torch.nn.functional as F
 
 from hdml.utils.config import HDMLConfig
 from hdml.data.dataset import MinariDatasetAdapter
+from hdml.data.collector import TrajectoryCollector
 from hdml.models.hdml_model import HDMLModel
 from hdml.utils.metrics import compute_action_smoothness
 
@@ -45,7 +46,13 @@ def evaluate_cognition(
     for traj in trajectories:
         obs = traj["observations"]  # (T, 6) -> [x, y, vx, vy, gx, gy]
         actions = traj["actions"]   # (T, 2)
-        next_states = traj["next_states"]  # (T, 6)
+        if "next_states" in traj:
+            next_states = traj["next_states"]
+        elif "next_observations" in traj:
+            next_states = traj["next_observations"]
+        else:
+            next_states = np.concatenate([obs[1:], obs[-1:]], axis=0)
+
         t_len = len(obs)
         if t_len < context_length:
             continue
@@ -77,10 +84,15 @@ def evaluate_cognition(
             mae_dyn = F.l1_loss(next_states_pred, t_next).item()
             dyn_errors.append(mae_dyn)
 
-            # 2. Goal Navigation Alignment: Distance between final predicted position and goal
-            final_pos = obs[-1, :2]
-            goal_pos = obs[-1, 4:6]
-            dist_to_goal = float(np.linalg.norm(final_pos - goal_pos))
+            # 2. Goal Navigation Alignment: Distance to target goal
+            if obs.shape[-1] == 53:
+                dist_to_goal = float(np.linalg.norm(obs[-1, 51:53]))
+            elif obs.shape[-1] == 6:
+                final_pos = obs[-1, :2]
+                goal_pos = obs[-1, 4:6]
+                dist_to_goal = float(np.linalg.norm(final_pos - goal_pos))
+            else:
+                dist_to_goal = float(np.linalg.norm(obs[-1, :2] - obs[-1, -2:]))
             goal_reaching_distances.append(dist_to_goal)
 
             # 3. Action Jerk & Smoothness
@@ -119,12 +131,17 @@ def main() -> None:
     model.load_state_dict(ckpt["model_state_dict"])
 
     # Load evaluation trajectories
-    eval_trajs = MinariDatasetAdapter.load_minari_dataset(
-        dataset_name=args.dataset,
-        max_episodes=args.num_eval_trajs,
-        her_probability=0.0,  # test on actual task goals
-        seed=999,
-    )
+    if Path(args.dataset).exists():
+        eval_trajs = TrajectoryCollector.load_dataset(args.dataset)
+        if args.num_eval_trajs is not None and len(eval_trajs) > args.num_eval_trajs:
+            eval_trajs = eval_trajs[:args.num_eval_trajs]
+    else:
+        eval_trajs = MinariDatasetAdapter.load_minari_dataset(
+            dataset_name=args.dataset,
+            max_episodes=args.num_eval_trajs,
+            her_probability=0.0,  # test on actual task goals
+            seed=999,
+        )
 
     results = evaluate_cognition(
         model=model,

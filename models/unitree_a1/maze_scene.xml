@@ -1,0 +1,56 @@
+<mujoco model="a1 complex maze scene">
+  <include file="a1.xml"/>
+
+  <visual>
+    <headlight diffuse="0.85 0.85 0.85" ambient="0.35 0.35 0.35" specular="0.2 0.2 0.2"/>
+    <rgba haze="0.10 0.18 0.28 1"/>
+    <global azimuth="140" elevation="-32" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.25 0.45 0.65" rgb2="0.05 0.08 0.12" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.20 0.25 0.32" rgb2="0.14 0.18 0.24"
+      markrgb="0.4 0.6 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="8 8" reflectance="0.15"/>
+    
+    <material name="wall_mat" rgba="0.25 0.32 0.42 1.0" specular="0.2" shininess="0.3"/>
+    <material name="wall_accent" rgba="0.15 0.55 0.85 1.0" specular="0.4" shininess="0.5"/>
+    <material name="goal_mat" rgba="0.0 0.95 0.45 0.85" specular="0.6" shininess="0.8"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 5.0" dir="0 0 -1" directional="true" diffuse="0.9 0.9 0.9" specular="0.2 0.2 0.2"/>
+    <light pos="-2.5 -2.5 4.0" dir="1 1 -1" directional="false" diffuse="0.5 0.5 0.6"/>
+    <light pos="2.5 2.5 4.0" dir="-1 -1 -1" directional="false" diffuse="0.5 0.5 0.6"/>
+
+    <!-- Clear, Elevated 3D Isometric Follow Camera (High above walls to prevent occlusion) -->
+    <camera name="follow_cam" mode="trackcom" pos="-1.5 -1.5 2.5" xyaxes="0.707 -0.707 0 0.408 0.408 0.816"/>
+    <!-- Top-Down Overview Map Camera -->
+    <camera name="overview_cam" pos="0 0 9.0" xyaxes="1 0 0 0 1 0"/>
+
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Complex Hard Labyrinth Bounding Box (8m x 8m) -->
+    <!-- North Wall -->
+    <geom name="wall_n" type="box" pos="0 4.0 0.35" size="4.1 0.1 0.35" material="wall_mat"/>
+    <!-- South Wall -->
+    <geom name="wall_s" type="box" pos="0 -4.0 0.35" size="4.1 0.1 0.35" material="wall_mat"/>
+    <!-- East Wall -->
+    <geom name="wall_e" type="box" pos="4.0 0 0.35" size="0.1 4.1 0.35" material="wall_mat"/>
+    <!-- West Wall -->
+    <geom name="wall_w" type="box" pos="-4.0 0 0.35" size="0.1 4.1 0.35" material="wall_mat"/>
+
+    <!-- Complex Hard Multi-Room Inner Dividers & U-Turn Chokepoints -->
+    <!-- Divider 1: Left Corridor Divider -->
+    <geom name="wall_div_1" type="box" pos="-1.5 0.8 0.35" size="0.1 2.2 0.35" material="wall_mat"/>
+    <!-- Divider 2: Right Corridor Divider -->
+    <geom name="wall_div_2" type="box" pos="1.5 -0.8 0.35" size="0.1 2.2 0.35" material="wall_mat"/>
+    <!-- Divider 3: Bottom Horizontal Baffle (Chokepoint) -->
+    <geom name="wall_div_3" type="box" pos="0.0 -1.5 0.35" size="1.5 0.1 0.35" material="wall_accent"/>
+    <!-- Divider 4: Top Horizontal Baffle (Chokepoint) -->
+    <geom name="wall_div_4" type="box" pos="0.0 1.5 0.35" size="1.5 0.1 0.35" material="wall_accent"/>
+
+    <!-- Goal Beacon Marker -->
+    <site name="goal_site" pos="2.8 2.8 0.3" size="0.35 0.35" type="cylinder" material="goal_mat"/>
+  </worldbody>
+</mujoco>
