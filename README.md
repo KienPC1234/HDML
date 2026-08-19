@@ -102,12 +102,12 @@ Evaluated under the NeurIPS 2021 `rliable` statistical protocol with 2,000 strat
 | Decision Transformer (Causal Attention DT) | 1,206,918 | 444.9 Hz | 2.25 ms | 0.8109 | 95.60 [25.36, 107.79] | 1.17 [0.32, 4.19] | 100.0% |
 | Decision RNN (LSTM Recurrent Policy) | 1,008,390 | 953.5 Hz | 1.05 ms | 0.9689 | 113.91 [89.56, 115.45] | 7.14 [4.22, 10.71] | 100.0% |
 | Implicit Q-Learning (IQL / Value-Advantage) | 286,985 | 4,051.6 Hz | 0.25 ms | 0.0080 | 1.84 [1.79, 2.26] | 2.11 [2.03, 2.32] | 100.0% |
-| Diffusion Policy (DDPM 10-step Denoising) | 153,606 | 148.9 Hz | 6.71 ms | 1.2983 | -0.11 [-0.46, 0.53] | -0.44 [-1.05, -0.05] | 100.0% |
+| Flow Matching (Standard Denoising) | 153,606 | 148.9 Hz | 6.71 ms | 1.2983 | -0.11 [-0.46, 0.53] | -0.44 [-1.05, -0.05] | 100.0% |
 | MLP-BC (Standard Feedforward Reactive) | 72,198 | 3,294.2 Hz | 0.30 ms | 0.0028 | -0.26 [-0.26, -0.24] | -0.34 [-0.40, -0.30] | 100.0% |
 
 ### 3. Probability of Improvement (Mann-Whitney U Bootstrap Statistic: P(HDML > Baseline))
 
-- $P(\text{HDML} > \text{Diffusion Policy}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
+- $P(\text{HDML} > \text{Flow Matching}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
 - $P(\text{HDML} > \text{MLP-BC}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
 - $P(\text{HDML} > \text{Implicit Q-Learning}) = \mathbf{100.00\%}$ [95% CI: 100.00% - 100.00%]
 - $P(\text{HDML} > \text{Decision Transformer}) = 36.00\%$ [95% CI: 0.00% - 80.00%]
