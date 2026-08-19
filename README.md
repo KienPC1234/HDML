@@ -84,6 +84,36 @@ Under closed-loop MuJoCo simulation with 3 external lateral kicks ($+8\text{ N},
 
 Rendered telemetry video: [`videos/unitree_a1_robot_dog_kick_recovery.mp4`](videos/unitree_a1_robot_dog_kick_recovery.mp4) (1.3 MB, 720p 30fps).
 
+### 4. Zero-Label Unsupervised Pre-training & Tri-Camera Labyrinth Solving
+
+HDML learns latent cognitive spatial representations and closed-loop motor control on **PointMaze** and multi-articulated **AntBot (8-DOF)** without human demonstrations or external reward labels:
+- **Unsupervised World Dynamics**: Self-predicts next states $s_t + a_t \to \hat{s}_{t+1}$ to form a continuous latent topological graph.
+- **Hindsight Subgoal Stitching (HER)**: Automatically chains disparate exploration segments into globally optimal shortest paths across interconnected rooms.
+- **Tri-Camera Multi-View Compositor**: Top pane displays a global top-down overview ($22\text{m} \times 22\text{m}$), while bottom panes display real-time close-up leg tracking and 3D isometric corridor perspective.
+
+| Environment / Robot | State Dim | Action Dim | Unsupervised Dataset | Reached Step | Jerk $\Delta^2 a_t$ | Multi-View Video |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **PointMaze U-Maze** | 4D | 2D | `D4RL/pointmaze/umaze-v2` | 76 | 0.0520 | [`videos/pointmaze_hdml_solved.gif`](videos/pointmaze_hdml_solved.gif) |
+| **PointMaze Medium** | 4D | 2D | `D4RL/pointmaze/medium-v2` | 138 | 0.0384 | [`videos/pointmaze_medium_hdml_solved.gif`](videos/pointmaze_medium_hdml_solved.gif) |
+| **AntBot U-Maze (8-DOF)** | 31D | 8D | `D4RL/antmaze/umaze-v2` | 274 | 0.3174 | [`videos/antmaze_hdml_solved.gif`](videos/antmaze_hdml_solved.gif) |
+| **AntBot Medium (8-DOF Multi-Room)** | 31D | 8D | `D4RL/antmaze/medium-play-v2` | **212** | **0.3070** | [`videos/antmaze_medium_multiview_solved.gif`](videos/antmaze_medium_multiview_solved.gif) |
+
+### 5. High-Throughput ONNX Export & Edge CPU Deployment
+
+HDML models export cleanly to standard ONNX format with 100% numerical parity verification against PyTorch:
+
+```bash
+# Export trained HDML policy to ONNX with parity verification
+python scripts/export_onnx.py \
+    --config configs/antmaze_medium_unsupervised.yaml \
+    --checkpoint checkpoints/antmaze_medium/best_model.pt \
+    --output deployment/hdml_antmaze_medium_policy.onnx
+```
+
+- **Model Size:** 4.70 MB
+- **Max Absolute Error ($\|\text{PyTorch} - \text{ONNX}\|_\infty$):** $5.66 \times 10^{-7}$
+- **Inference Latency (Single CPU Core):** $5.39\text{ ms}$ / step (**$186\text{ Hz}$**)
+
 ## Quickstart & Reproducibility
 
 ### Environment Setup

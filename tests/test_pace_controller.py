@@ -64,3 +64,51 @@ def test_pace_controller_truncation():
     act2, replan = pace.get_next_action(torch.tensor([5.0])) # Deviation 6.0 > 1.0
     assert act2 is None
     assert replan
+
+
+def test_evaluator_with_pace_controller():
+    import gymnasium as gym
+    from hdml.models import HDMLModel
+    from hdml.utils.config import ModelConfig
+    from hdml.evaluation.evaluator import HDMLEvaluator
+
+    cfg = ModelConfig(
+        prop_dim=17,
+        action_dim=6,
+        d_model=32,
+        d_state=8,
+        d_conv=2,
+        expand=2,
+        num_mamba_layers=1,
+        d_subgoal=16,
+        cfc_units=16,
+    )
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = HDMLModel.from_config(cfg).to(device)
+
+    evaluator = HDMLEvaluator(
+        model=model,
+        env_name="HalfCheetah-v5",
+        context_length=10,
+        target_return=100.0,
+        scale_return=100.0,
+        device=device,
+    )
+
+    env = gym.make("HalfCheetah-v5")
+    pace = PACEController(threshold=0.5)
+
+    # Test single episode with macro_interval=3 and pace_controller active
+    res = evaluator.evaluate_episode(
+        env=env,
+        seed=42,
+        max_steps=10,
+        macro_interval=3,
+        pace_controller=pace,
+    )
+    env.close()
+
+    assert "episode_return" in res
+    assert res["episode_length"] == 10
+    assert "action_smoothness" in res
+

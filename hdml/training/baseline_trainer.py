@@ -303,6 +303,7 @@ class BaselineTrainer:
             val_loss = self._evaluate()
             if val_loss < self.best_loss:
                 self.best_loss = val_loss
+                self.save_checkpoint(self.output_dir / "best_model.pt")
             metrics["val_loss"] = val_loss
 
             history.append(metrics)
