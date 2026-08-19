@@ -224,9 +224,10 @@ def evaluate_single_seed(
 
 
 def run_multi_seed_benchmark(
-    config_path: str = "configs/halfcheetah_v4_default.yaml",
-    checkpoint_path: str = "checkpoints/halfcheetah_v4/best_model.pt",
+    config_path: str = "configs/halfcheetah_v5_default.yaml",
+    checkpoint_path: str = "checkpoints/halfcheetah_v5/best_model.pt",
     seeds: list[int] | None = None,
+    episodes: int = 3,
     device_str: str = "cuda",
 ) -> None:
     if seeds is None:
@@ -237,7 +238,7 @@ def run_multi_seed_benchmark(
 
     print(f"\n{'=' * 115}")
     print(f"MULTI-SEED STATISTICAL ABLATION & BENCHMARK ON {cfg.env.env_name.upper()}")
-    print(f"Random Seeds: {seeds} | Active Hardware: {device}")
+    print(f"Random Seeds: {seeds} | Episodes Per Seed: {episodes} | Active Hardware: {device}")
     print(f"{'=' * 115}\n")
 
     ckpt_path = Path(checkpoint_path)
@@ -287,7 +288,7 @@ def run_multi_seed_benchmark(
 
     results: dict[str, dict[str, list[float]]] = {}
     for name, (model_type, _t, _m) in models.items():
-        print(f"[EVALUATING] {name} across {len(seeds)} random seeds (synchronous per-step inference)...")
+        print(f"[EVALUATING] {name} across {len(seeds)} random seeds ({episodes} ep/seed)...")
         results[name] = {
             "d4rl_score": [],
             "raw_return": [],
@@ -304,7 +305,7 @@ def run_multi_seed_benchmark(
                 cfg=cfg,
                 device=device,
                 seed=seed,
-                episodes=3,
+                episodes=episodes,
                 perturbation=False,
                 state_mean=state_mean,
                 state_std=state_std,
@@ -334,7 +335,7 @@ def run_multi_seed_benchmark(
     print("\n% LaTeX Code for Publication Paper Submission (Table: Multi-Seed Statistical Ablation):")
     print(r"\begin{table*}[t]")
     print(r"\centering")
-    print(r"\caption{Multi-seed comparison ($5$ Random Seeds) on " + cfg.env.env_name + r". Trained baselines, synchronous per-step inference. Jerk = mean $|\Delta^2 a_t|$.}")
+    print(r"\caption{Multi-seed comparison (" + str(len(seeds)) + r" Random Seeds) on " + cfg.env.env_name + r". Trained baselines, synchronous per-step inference. Jerk = mean $|\Delta^2 a_t|$.}")
     print(r"\label{tab:ablation_results}")
     print(r"\resizebox{\textwidth}{!}{")
     print(r"\begin{tabular}{lccccr}")
@@ -367,6 +368,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-seed statistical ablation benchmark.")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
+    parser.add_argument("--episodes", type=int, default=3, help="Episodes per seed")
+    parser.add_argument("--seeds", type=int, nargs="+", default=[42, 100, 2024], help="List of random seeds")
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
@@ -380,5 +383,7 @@ if __name__ == "__main__":
     run_multi_seed_benchmark(
         config_path=cfg_path,
         checkpoint_path=ckpt_path,
+        seeds=args.seeds,
+        episodes=args.episodes,
         device_str=args.device,
     )

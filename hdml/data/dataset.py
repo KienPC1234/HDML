@@ -284,12 +284,24 @@ class MinariDatasetAdapter:
     """Converts official Minari / D4RL dataset episodes into HDML trajectory format."""
 
     @staticmethod
-    def load_minari_dataset(dataset_name: str, gamma: float = 0.99) -> list[dict[str, np.ndarray]]:
+    def load_minari_dataset(
+        dataset_name: str,
+        gamma: float = 0.99,
+        max_episodes: int | None = None,
+        her_probability: float = 0.0,
+        seed: int = 42,
+    ) -> list[dict[str, np.ndarray]]:
         """Load a Minari dataset and convert it into HDML format.
 
+        Supports both standard array observations and dictionary observations (PointMaze,
+        AntMaze, etc.) with optional Hindsight Goal Relabeling for unsupervised learning.
+
         Args:
-            dataset_name: Name of Minari dataset (e.g. 'antmaze-umaze-v0', 'door-human-v0').
+            dataset_name: Name of Minari dataset (e.g. 'D4RL/pointmaze/umaze-v2', 'antmaze-umaze-v0').
             gamma: Discount factor for RTG computation.
+            max_episodes: Optional maximum number of episodes to load.
+            her_probability: Probability of applying Hindsight Goal Relabeling (0.0 to disable).
+            seed: Random seed for reproducible goal sampling.
 
         Returns:
             List of HDML trajectory dictionaries.
@@ -303,26 +315,64 @@ class MinariDatasetAdapter:
         logger.info(f"Loading Minari dataset: {dataset_name}")
         minari_data = minari.load_dataset(dataset_name)
 
+        rng = np.random.default_rng(seed)
         trajectories: list[dict[str, np.ndarray]] = []
-        for ep in minari_data.iterate_episodes():
-            obs = np.asarray(ep.observations[:-1] if len(ep.observations) > len(ep.actions) else ep.observations, dtype=np.float32)
-            act = np.asarray(ep.actions, dtype=np.float32)
-            rew = np.asarray(ep.rewards, dtype=np.float32)
-            dones = np.asarray(ep.terminations, dtype=bool) | np.asarray(ep.truncations, dtype=bool)
 
+        for ep_idx, ep in enumerate(minari_data.iterate_episodes()):
+            if max_episodes is not None and ep_idx >= max_episodes:
+                break
+
+            act = np.asarray(ep.actions, dtype=np.float32)
+            t_len = len(act)
+            if t_len == 0:
+                continue
+
+            if isinstance(ep.observations, dict):
+                raw_obs = np.asarray(ep.observations["observation"][:t_len], dtype=np.float32)
+                raw_next_obs = np.asarray(ep.observations["observation"][1 : t_len + 1], dtype=np.float32)
+                desired_goal = np.asarray(ep.observations.get("desired_goal", np.zeros((t_len + 1, 2)))[:t_len], dtype=np.float32)
+
+                # If achieved_goal (xy coordinates) is separate (e.g. AntMaze), include it in proprioception
+                if "achieved_goal" in ep.observations and raw_obs.shape[-1] != 4:
+                    pos = np.asarray(ep.observations["achieved_goal"][:t_len], dtype=np.float32)
+                    next_pos = np.asarray(ep.observations["achieved_goal"][1 : t_len + 1], dtype=np.float32)
+                    obs = np.concatenate([pos, raw_obs], axis=-1).astype(np.float32)
+                    next_obs = np.concatenate([next_pos, raw_next_obs], axis=-1).astype(np.float32)
+                    goal_pool = pos
+                else:
+                    obs = raw_obs
+                    next_obs = raw_next_obs
+                    goal_pool = raw_obs[:, :2]
+
+                if her_probability > 0.0 and rng.random() < her_probability and t_len > 1:
+                    future_indices = rng.integers(np.arange(t_len), t_len)
+                    goal = goal_pool[future_indices]
+                else:
+                    goal = desired_goal
+
+                combined_obs = np.concatenate([obs, goal], axis=-1).astype(np.float32)
+                combined_next = np.concatenate([next_obs, goal], axis=-1).astype(np.float32)
+            else:
+                raw_obs = np.asarray(ep.observations, dtype=np.float32)
+                combined_obs = raw_obs[:t_len]
+                combined_next = raw_obs[1 : t_len + 1] if len(raw_obs) > t_len else raw_obs[:t_len]
+
+            rew = np.asarray(ep.rewards[:t_len], dtype=np.float32)
+            dones = np.asarray(ep.terminations[:t_len], dtype=bool) | np.asarray(ep.truncations[:t_len], dtype=bool)
             rtg = discount_cumsum(rew, gamma)
-            timesteps = np.arange(len(obs), dtype=np.int64)
+            timesteps = np.arange(t_len, dtype=np.int64)
 
             traj = {
-                "observations": obs,
+                "observations": combined_obs,
                 "actions": act,
                 "rewards": rew,
                 "returns_to_go": rtg,
+                "next_states": combined_next,
                 "dones": dones,
                 "timesteps": timesteps,
                 "total_return": np.float32(np.sum(rew)),
             }
             trajectories.append(traj)
 
-        logger.info(f"Loaded {len(trajectories)} trajectories from Minari dataset: {dataset_name}")
+        logger.info(f"Loaded and formatted {len(trajectories)} trajectories from Minari dataset: {dataset_name}")
         return trajectories

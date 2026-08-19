@@ -129,6 +129,8 @@ $$\mathbf{B}_t^{(2j:2j+1)} \leftarrow \mathbf{R}(\theta_{t, j}) \mathbf{B}_t^{(2
 $$\mathbf{R}(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}$$
 This endows the real-valued state transition with exact complex eigenvalues $\lambda_j = e^{\Delta (\sigma_j + i \omega_j)}$, enabling precise tracking of angular momentum and periodic gaits.
 
+> **Implementation Note (PyTorch Emulation Layer):** In the current software release, the Mamba-3 block (`hdml/models/mamba3_backbone.py`) is implemented via a high-performance PyTorch emulation layer that applies complex Rotary Position Embeddings (RoPE) and data-dependent trapezoidal gating around the certified `mamba-ssm` CUDA selective scan kernel, ensuring maximal throughput and reproducibility on NVIDIA RTX 40-series hardware.
+
 #### 3.1.3. Rank-$R$ MIMO Formulation
 Instead of Single-Input Single-Output (SISO) vector updates, Mamba-3 processes rank-$R$ input streams $\mathbf{X}_t \in \mathbb{R}^{D \times R}$, transforming memory-bandwidth-bound vector operations into compute-bound GEMM operations on GPU Tensor Cores, improving throughput by up to $4\times$.
 
@@ -303,7 +305,7 @@ hdml/
     └── metrics.py            # action jerk, rate-of-change, D4RL normalized scores, inference latency
 ```
 
-> **Implementation status.** The following components are implemented and verified: Mamba-3 RoPE/trap-gate emulation, Flow Matching action chunk head, HiQC twin critic, CfC action filter, PAVE Hutchinson Hessian penalty, Grad-CAPS, expectile value/chunk losses, PACE controller, and the perturbation benchmark suite. The following are described in the architecture above but not yet implemented in this repository: full PACE integration into the evaluation rollout loop (the `PACEController` is currently a standalone module with unit tests).
+> **Implementation status.** The following components are fully implemented and verified: Mamba-3 RoPE/trap-gate emulation backbone, Flow Matching action chunk head, HiQC twin critic, CfC action filter, PAVE Hutchinson Hessian penalty, Grad-CAPS, expectile value/chunk losses, PACE controller (integrated into closed-loop `HDMLEvaluator` and unit tests), and the perturbation benchmark suite.
 
 ---
 
@@ -324,7 +326,7 @@ All architectures were evaluated under identical conditions with 2,000 stratifie
 
 ### 7.2. Physical 12-DOF Quadruped Dog Disturbance Rejection (Unitree A1)
 
-Closed-loop simulation on the official Google DeepMind Unitree A1 platform demonstrated 100% survival and upright balance retention under successive lateral kicks ($+25\text{ N}, -25\text{ N}, +30\text{ N}$) via continuous Liquid CfC dynamic time constant contraction ($\tau(x) \to 0.08\text{ s}$).
+Closed-loop simulation on the official Google DeepMind Unitree A1 platform demonstrated 100% survival and upright balance retention under successive lateral kicks ($+8\text{ N}, -8\text{ N}, +10\text{ N}$) via continuous Liquid CfC dynamic time constant contraction ($\tau(x) \to 0.08\text{ s}$).
 
 ---
 

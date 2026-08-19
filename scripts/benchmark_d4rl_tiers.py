@@ -11,9 +11,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 import numpy as np
 import torch
+
+# Ensure scripts directory is in sys.path for local module imports
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from hdml.utils.config import HDMLConfig, ModelConfig, TrainingConfig, EnvConfig
 from hdml.models import (

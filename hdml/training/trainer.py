@@ -160,6 +160,81 @@ class HDMLTrainer:
             param_group["lr"] = lr
         return lr
 
+    def _compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute sequence-level composite loss for HDML training and evaluation.
+
+        Args:
+            batch: Dictionary containing states, actions, rtgs, timesteps, mask,
+                   target_actions, target_rtgs, and next_states.
+
+        Returns:
+            Tuple of (scalar loss tensor, dictionary of float loss components).
+        """
+        states = batch["states"].to(self.device, non_blocking=True)
+        actions = batch["actions"].to(self.device, non_blocking=True)
+        rtgs = batch["rtgs"].to(self.device, non_blocking=True)
+        timesteps = batch["timesteps"].to(self.device, non_blocking=True)
+        mask = batch["mask"].to(self.device, non_blocking=True)
+
+        target_actions = batch["target_actions"].to(self.device, non_blocking=True)
+        target_rtgs = batch["target_rtgs"].to(self.device, non_blocking=True)
+        next_states = batch["next_states"].to(self.device, non_blocking=True)
+
+        valid_tokens = torch.clamp(mask.sum(), min=1.0)
+        mask_exp_act = mask.unsqueeze(-1)
+        mask_exp_state = mask.unsqueeze(-1)
+
+        actions_pred, subgoals_pred, values_pred, next_states_pred, _ = self.model(
+            states=states,
+            rtgs=rtgs,
+            actions=actions,
+            timesteps=timesteps,
+        )
+
+        # 1. Action imitation loss (Smooth L1)
+        raw_act = F.smooth_l1_loss(actions_pred, target_actions, reduction="none")
+        action_loss = (raw_act * mask_exp_act).sum() / (valid_tokens * actions_pred.shape[-1])
+
+        # 2. Future state subgoal representation loss (eliminates latent collapse)
+        if subgoals_pred.shape[-1] == next_states.shape[-1]:
+            raw_subgoal = F.smooth_l1_loss(subgoals_pred, next_states, reduction="none")
+            subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (valid_tokens * subgoals_pred.shape[-1])
+        else:
+            subgoal_loss = (subgoals_pred**2).sum() / (valid_tokens * subgoals_pred.shape[-1])
+
+        # 3. Value loss
+        raw_val = F.mse_loss(values_pred, target_rtgs, reduction="none")
+        value_loss = (raw_val * mask_exp_act).sum() / valid_tokens
+
+        # 4. Dynamics loss
+        raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
+        dynamics_loss = (raw_dyn * mask_exp_state).sum() / (valid_tokens * next_states_pred.shape[-1])
+
+        # 5. Grad-CAPS Smoothness loss (penalty on consecutive action changes)
+        if actions_pred.shape[1] > 1:
+            diff = actions_pred[:, 1:, :] - actions_pred[:, :-1, :]
+            mask_diff = mask[:, 1:].unsqueeze(-1)
+            grad_caps_loss = ((diff ** 2) * mask_diff).sum() / (torch.clamp(mask_diff.sum(), min=1.0) * actions_pred.shape[-1])
+        else:
+            grad_caps_loss = torch.tensor(0.0, device=self.device)
+
+        loss = (
+            action_loss
+            + self.config.reg_loss_weight * value_loss
+            + self.config.subgoal_loss_weight * subgoal_loss
+            + self.config.dynamics_weight * dynamics_loss
+            + self.config.grad_caps_weight * grad_caps_loss
+        )
+        loss_dict = {
+            "total_loss": float(loss.item()),
+            "action_loss": float(action_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "subgoal_loss": float(subgoal_loss.item()),
+            "dynamics_loss": float(dynamics_loss.item()),
+            "grad_caps_loss": float(grad_caps_loss.item()),
+        }
+        return loss, loss_dict
+
     def train_epoch(self, epoch: int) -> dict[str, float]:
         """Train the model for one epoch.
 
@@ -170,12 +245,7 @@ class HDMLTrainer:
             Dictionary of averaged epoch training metrics.
         """
         self.model.train()
-        total_losses: list[float] = []
-        action_losses: list[float] = []
-        value_losses: list[float] = []
-        subgoal_losses: list[float] = []
-        dynamics_losses: list[float] = []
-        grad_caps_losses: list[float] = []
+        epoch_losses: dict[str, float] = {}
 
         total_samples = 0
         t0 = time.perf_counter()
@@ -188,74 +258,12 @@ class HDMLTrainer:
             dynamic_ncols=True,
         )
         for batch in batch_bar:
-            states = batch["states"].to(self.device, non_blocking=True)
-            actions = batch["actions"].to(self.device, non_blocking=True)
-            rtgs = batch["rtgs"].to(self.device, non_blocking=True)
-            timesteps = batch["timesteps"].to(self.device, non_blocking=True)
-            mask = batch["mask"].to(self.device, non_blocking=True)
-            
-            target_actions = batch["target_actions"].to(self.device, non_blocking=True)
-            target_rtgs = batch["target_rtgs"].to(self.device, non_blocking=True)
-            next_states = batch["next_states"].to(self.device, non_blocking=True)
-
-            valid_tokens = torch.clamp(mask.sum(), min=1.0)
-            mask_exp_act = mask.unsqueeze(-1)
-            mask_exp_state = mask.unsqueeze(-1)
-
             self.optimizer.zero_grad(set_to_none=True)
             lr = self._adjust_lr()
 
             # Sequence forward pass with AMP
             with torch.amp.autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
-                actions_pred, subgoals_pred, values_pred, next_states_pred, _ = self.model(
-                    states=states,
-                    rtgs=rtgs,
-                    actions=actions,
-                    timesteps=timesteps,
-                )
-                
-                # 1. Action imitation loss (Smooth L1)
-                raw_act = F.smooth_l1_loss(actions_pred, target_actions, reduction="none")
-                action_loss = (raw_act * mask_exp_act).sum() / (valid_tokens * actions_pred.shape[-1])
-                
-                # 2. Future state subgoal representation loss (eliminates latent collapse)
-                if subgoals_pred.shape[-1] == next_states.shape[-1]:
-                    raw_subgoal = F.smooth_l1_loss(subgoals_pred, next_states, reduction="none")
-                    subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (valid_tokens * subgoals_pred.shape[-1])
-                else:
-                    subgoal_loss = (subgoals_pred**2).sum() / (valid_tokens * subgoals_pred.shape[-1])
-
-                # 3. Value loss
-                raw_val = F.mse_loss(values_pred, target_rtgs, reduction="none")
-                value_loss = (raw_val * mask_exp_act).sum() / valid_tokens
-
-                # 4. Dynamics loss
-                raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
-                dynamics_loss = (raw_dyn * mask_exp_state).sum() / (valid_tokens * next_states_pred.shape[-1])
-
-                # 5. Grad-CAPS Smoothness loss (penalty on consecutive action changes)
-                if actions_pred.shape[1] > 1:
-                    diff = actions_pred[:, 1:, :] - actions_pred[:, :-1, :]
-                    mask_diff = mask[:, 1:].unsqueeze(-1)
-                    grad_caps_loss = ((diff ** 2) * mask_diff).sum() / (torch.clamp(mask_diff.sum(), min=1.0) * actions_pred.shape[-1])
-                else:
-                    grad_caps_loss = torch.tensor(0.0, device=self.device)
-
-                loss = (
-                    action_loss
-                    + self.config.reg_loss_weight * value_loss
-                    + self.config.subgoal_loss_weight * subgoal_loss
-                    + self.config.dynamics_weight * dynamics_loss
-                    + self.config.grad_caps_weight * grad_caps_loss
-                )
-                loss_dict = {
-                    "total_loss": float(loss.item()),
-                    "action_loss": float(action_loss.item()),
-                    "value_loss": float(value_loss.item()),
-                    "subgoal_loss": float(subgoal_loss.item()),
-                    "dynamics_loss": float(dynamics_loss.item()),
-                    "grad_caps_loss": float(grad_caps_loss.item()),
-                }
+                loss, loss_dict = self._compute_loss(batch)
 
             # Defensive NaN/Inf Safeguard
             if not torch.isfinite(loss).all():
@@ -276,14 +284,10 @@ class HDMLTrainer:
                 self.optimizer.step()
 
             self.current_step += 1
-            total_samples += states.shape[0]
+            total_samples += batch["states"].shape[0]
 
-            total_losses.append(loss_dict["total_loss"])
-            action_losses.append(loss_dict["action_loss"])
-            value_losses.append(loss_dict["value_loss"])
-            subgoal_losses.append(loss_dict["subgoal_loss"])
-            dynamics_losses.append(loss_dict["dynamics_loss"])
-            grad_caps_losses.append(loss_dict["grad_caps_loss"])
+            for k, v in loss_dict.items():
+                epoch_losses[k] = epoch_losses.get(k, 0.0) + v
 
             batch_bar.set_postfix(
                 loss=f"{loss_dict['total_loss']:.3f}",
@@ -293,15 +297,16 @@ class HDMLTrainer:
 
         t1 = time.perf_counter()
         throughput = float(total_samples / max(1e-5, (t1 - t0)))
+        num_batches = max(1, len(self.train_loader))
 
         metrics = {
             "epoch": epoch,
-            "train_loss": float(sum(total_losses) / max(1, len(total_losses))),
-            "train_action_loss": float(sum(action_losses) / max(1, len(action_losses))),
-            "train_value_loss": float(sum(value_losses) / max(1, len(value_losses))),
-            "train_subgoal_loss": float(sum(subgoal_losses) / max(1, len(subgoal_losses))),
-            "train_dynamics_loss": float(sum(dynamics_losses) / max(1, len(dynamics_losses))),
-            "train_grad_caps_loss": float(sum(grad_caps_losses) / max(1, len(grad_caps_losses))),
+            "train_loss": epoch_losses.get("total_loss", 0.0) / num_batches,
+            "train_action_loss": epoch_losses.get("action_loss", 0.0) / num_batches,
+            "train_value_loss": epoch_losses.get("value_loss", 0.0) / num_batches,
+            "train_subgoal_loss": epoch_losses.get("subgoal_loss", 0.0) / num_batches,
+            "train_dynamics_loss": epoch_losses.get("dynamics_loss", 0.0) / num_batches,
+            "train_grad_caps_loss": epoch_losses.get("grad_caps_loss", 0.0) / num_batches,
             "throughput_fps": throughput,
         }
 
@@ -329,77 +334,22 @@ class HDMLTrainer:
             return {}
 
         self.model.eval()
-        total_losses: list[float] = []
-        action_losses: list[float] = []
-        value_losses: list[float] = []
-        subgoal_losses: list[float] = []
-        dynamics_losses: list[float] = []
+        val_losses: dict[str, float] = {}
 
         for batch in self.val_loader:
-            states = batch["states"].to(self.device, non_blocking=True)
-            actions = batch["actions"].to(self.device, non_blocking=True)
-            rtgs = batch["rtgs"].to(self.device, non_blocking=True)
-            timesteps = batch["timesteps"].to(self.device, non_blocking=True)
-            mask = batch["mask"].to(self.device, non_blocking=True)
-            
-            target_actions = batch["target_actions"].to(self.device, non_blocking=True)
-            target_rtgs = batch["target_rtgs"].to(self.device, non_blocking=True)
-            next_states = batch["next_states"].to(self.device, non_blocking=True)
-
-            valid_tokens = torch.clamp(mask.sum(), min=1.0)
-            mask_exp_act = mask.unsqueeze(-1)
-            mask_exp_state = mask.unsqueeze(-1)
-
             with torch.amp.autocast("cuda", enabled=self.use_amp, dtype=self.amp_dtype):
-                actions_pred, subgoals_pred, values_pred, next_states_pred, _ = self.model(
-                    states=states,
-                    rtgs=rtgs,
-                    actions=actions,
-                    timesteps=timesteps,
-                )
-                
-                raw_act = F.smooth_l1_loss(actions_pred, target_actions, reduction="none")
-                action_loss = (raw_act * mask_exp_act).sum() / (valid_tokens * actions_pred.shape[-1])
-                
-                if subgoals_pred.shape[-1] == next_states.shape[-1]:
-                    raw_subgoal = F.smooth_l1_loss(subgoals_pred, next_states, reduction="none")
-                    subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (valid_tokens * subgoals_pred.shape[-1])
-                else:
-                    subgoal_loss = (subgoals_pred**2).sum() / (valid_tokens * subgoals_pred.shape[-1])
+                _, loss_dict = self._compute_loss(batch)
 
-                raw_val = F.mse_loss(values_pred, target_rtgs, reduction="none")
-                value_loss = (raw_val * mask_exp_act).sum() / valid_tokens
+            for k, v in loss_dict.items():
+                val_losses[k] = val_losses.get(k, 0.0) + v
 
-                raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
-                dynamics_loss = (raw_dyn * mask_exp_state).sum() / (valid_tokens * next_states_pred.shape[-1])
-
-                if actions_pred.shape[1] > 1:
-                    diff = actions_pred[:, 1:, :] - actions_pred[:, :-1, :]
-                    mask_diff = mask[:, 1:].unsqueeze(-1)
-                    grad_caps_loss = ((diff ** 2) * mask_diff).sum() / (torch.clamp(mask_diff.sum(), min=1.0) * actions_pred.shape[-1])
-                else:
-                    grad_caps_loss = torch.tensor(0.0, device=self.device)
-
-                loss = (
-                    action_loss
-                    + self.config.reg_loss_weight * value_loss
-                    + self.config.subgoal_loss_weight * subgoal_loss
-                    + self.config.dynamics_weight * dynamics_loss
-                    + self.config.grad_caps_weight * grad_caps_loss
-                )
-
-            total_losses.append(float(loss.item()))
-            action_losses.append(float(action_loss.item()))
-            value_losses.append(float(value_loss.item()))
-            subgoal_losses.append(float(subgoal_loss.item()))
-            dynamics_losses.append(float(dynamics_loss.item()))
-
+        num_val_batches = max(1, len(self.val_loader))
         val_metrics = {
-            "val_loss": float(sum(total_losses) / max(1, len(total_losses))),
-            "val_action_loss": float(sum(action_losses) / max(1, len(action_losses))),
-            "val_value_loss": float(sum(value_losses) / max(1, len(value_losses))),
-            "val_subgoal_loss": float(sum(subgoal_losses) / max(1, len(subgoal_losses))),
-            "val_dynamics_loss": float(sum(dynamics_losses) / max(1, len(dynamics_losses))),
+            "val_loss": val_losses.get("total_loss", 0.0) / num_val_batches,
+            "val_action_loss": val_losses.get("action_loss", 0.0) / num_val_batches,
+            "val_value_loss": val_losses.get("value_loss", 0.0) / num_val_batches,
+            "val_subgoal_loss": val_losses.get("subgoal_loss", 0.0) / num_val_batches,
+            "val_dynamics_loss": val_losses.get("dynamics_loss", 0.0) / num_val_batches,
         }
 
         if self.writer is not None:

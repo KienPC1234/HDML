@@ -9,6 +9,7 @@ import torch
 from hdml.utils.config import HDMLConfig
 from hdml.models.hdml_model import HDMLModel
 from hdml.evaluation.evaluator import HDMLEvaluator
+from hdml.evaluation.pace_controller import PACEController
 from hdml.utils.metrics import benchmark_inference_latency
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -21,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint .pt")
     parser.add_argument("--episodes", type=int, default=5, help="Number of benchmark episodes")
     parser.add_argument("--macro-interval", type=int, default=5, help="Macro-planning interval (e.g. 5 or 10 steps per Mamba call)")
+    parser.add_argument("--pace", action="store_true", default=False, help="Enable PACE Phase-Aware Chunk Execution")
     parser.add_argument("--device", type=str, default="cuda", help="Evaluation device")
     return parser.parse_args()
 
@@ -54,14 +56,20 @@ def main() -> None:
         device=device,
     )
 
+    pace_ctrl = PACEController(threshold=0.5) if args.pace else None
+
     # 1. Standard Benchmark Evaluation with Macro Interval Decoupling
-    logger.info(f"=== 1. Standard Evaluation (Macro Interval={args.macro_interval}, Perturbations=OFF) ===")
-    std_results = evaluator.evaluate_benchmark(num_episodes=args.episodes, with_perturbations=False, macro_interval=args.macro_interval)
+    logger.info(f"=== 1. Standard Evaluation (Macro Interval={args.macro_interval}, PACE={'ON' if args.pace else 'OFF'}, Perturbations=OFF) ===")
+    std_results = evaluator.evaluate_benchmark(
+        num_episodes=args.episodes, with_perturbations=False, macro_interval=args.macro_interval, pace_controller=pace_ctrl
+    )
     print(f"Standard Results: Mean Return = {std_results['mean_return']:.2f} +/- {std_results['std_return']:.2f} | Jerk = {std_results['mean_smoothness']:.4f}")
 
     # 2. Perturbation Robustness Evaluation
-    logger.info(f"=== 2. Robustness Evaluation (Macro Interval={args.macro_interval}, Perturbations=ON) ===")
-    rob_results = evaluator.evaluate_benchmark(num_episodes=args.episodes, with_perturbations=True, macro_interval=args.macro_interval)
+    logger.info(f"=== 2. Robustness Evaluation (Macro Interval={args.macro_interval}, PACE={'ON' if args.pace else 'OFF'}, Perturbations=ON) ===")
+    rob_results = evaluator.evaluate_benchmark(
+        num_episodes=args.episodes, with_perturbations=True, macro_interval=args.macro_interval, pace_controller=pace_ctrl
+    )
     print(f"Robustness Results: Mean Return = {rob_results['mean_return']:.2f} +/- {rob_results['std_return']:.2f} | Jerk = {rob_results['mean_smoothness']:.4f}")
 
     # 3. Latency & Throughput Benchmark

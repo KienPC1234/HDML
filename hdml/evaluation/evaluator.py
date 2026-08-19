@@ -8,6 +8,7 @@ import torch
 
 from hdml.models.hdml_model import HDMLModel
 from hdml.evaluation.perturbations import SensorNoisePerturbation, ForceImpulsePerturbation
+from hdml.evaluation.pace_controller import PACEController
 from hdml.utils.metrics import compute_action_smoothness, compute_action_rate_of_change
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class HDMLEvaluator:
         force_perturb: ForceImpulsePerturbation | None = None,
         max_steps: int = 1000,
         macro_interval: int = 1,
+        pace_controller: PACEController | None = None,
     ) -> dict[str, Any]:
         """Run a single closed-loop evaluation episode with optional hierarchical decoupling.
 
@@ -57,6 +59,7 @@ class HDMLEvaluator:
             force_perturb: Optional force impulse generator.
             max_steps: Maximum allowable episode steps.
             macro_interval: Number of micro-steps per Mamba macro-planning invocation (1 = synchronous).
+            pace_controller: Optional Phase-Aware Chunk Execution controller to monitor state deviation.
 
         Returns:
             Dictionary containing episodic return, length, actions, and metrics.
@@ -81,6 +84,8 @@ class HDMLEvaluator:
         target_rtg = self.target_return
         cfc_hx = None
         current_subgoal: torch.Tensor | None = None
+        if pace_controller is not None:
+            pace_controller.reset()
 
         for t in range(max_steps):
             raw_obs = np.asarray(obs, dtype=np.float32)
@@ -94,7 +99,8 @@ class HDMLEvaluator:
             history_rtgs.append(scaled_rtg)
             history_timesteps.append(t)
             if len(history_actions) == 0:
-                history_actions.append(np.zeros(act_dim, dtype=np.float32))            # Trigger Mamba Macro-Planner at macro intervals (or on first step)
+                history_actions.append(np.zeros(act_dim, dtype=np.float32))
+
             # Context window formulation (exact causal slice without artificial zero-padding)
             ctx_len = min(len(history_states), self.context_length)
             ctx_states = np.array(history_states[-ctx_len:], dtype=np.float32)
@@ -106,8 +112,14 @@ class HDMLEvaluator:
             t_actions = torch.from_numpy(ctx_actions).unsqueeze(0).to(self.device)
             t_rtgs = torch.from_numpy(ctx_rtgs).unsqueeze(0).to(self.device)
             t_timesteps = torch.from_numpy(ctx_timesteps).unsqueeze(0).to(self.device)
+            t_prop_current = torch.from_numpy(norm_obs).unsqueeze(0).to(self.device)
 
-            if t % macro_interval == 0 or current_subgoal is None:
+            # Check if PACE triggers early macro replanning due to state deviation
+            needs_replanning = False
+            if pace_controller is not None and macro_interval > 1 and current_subgoal is not None:
+                _, needs_replanning = pace_controller.get_next_action(t_prop_current.squeeze(0))
+
+            if t % macro_interval == 0 or current_subgoal is None or needs_replanning:
                 with torch.inference_mode():
                     action_tensor, cfc_hx, info = self.model.get_action(
                         states=t_states,
@@ -117,9 +129,14 @@ class HDMLEvaluator:
                         hx=cfc_hx,
                     )
                     current_subgoal = info["subgoal"]
+                    if pace_controller is not None and macro_interval > 1:
+                        # Feed action / predicted states to PACE for chunk deviation tracking
+                        pace_controller.set_new_plan(
+                            action_chunk=action_tensor.squeeze(0).unsqueeze(0),
+                            predicted_states=None,
+                        )
             else:
                 # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal
-                t_prop_current = torch.from_numpy(norm_obs).unsqueeze(0).to(self.device)
                 t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
                 with torch.inference_mode():
                     action_tensor, cfc_hx = self.model.act_from_subgoal(
@@ -175,6 +192,7 @@ class HDMLEvaluator:
         with_perturbations: bool = False,
         macro_interval: int = 1,
         seed: int = 42,
+        pace_controller: PACEController | None = None,
     ) -> dict[str, float]:
         """Evaluate HDML agent across multiple benchmark episodes.
 
@@ -183,6 +201,7 @@ class HDMLEvaluator:
             with_perturbations: If True, applies sensor noise & force impulses.
             macro_interval: Micro-steps per Mamba macro-planning invocation.
             seed: Base seed.
+            pace_controller: Optional Phase-Aware Chunk Execution controller.
 
         Returns:
             Dictionary with mean and std for returns, lengths, and smoothness metrics.
@@ -212,6 +231,7 @@ class HDMLEvaluator:
                 sensor_noise=sensor_noise,
                 force_perturb=force_perturb,
                 macro_interval=macro_interval,
+                pace_controller=pace_controller,
             )
             returns.append(ep_result["episode_return"])
             lengths.append(ep_result["episode_length"])
