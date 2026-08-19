@@ -27,21 +27,23 @@ class UnitreeA1CPGPolicy:
     def __call__(self, obs: np.ndarray, step: int, noise_level: float = 0.05) -> np.ndarray:
         t = step * 0.02
         # obs: [torso_z, quat_w, quat_x, quat_y, quat_z, ...]
-        w, x, y, z = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
-        roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
-        pitch = np.arcsin(np.clip(2 * (w * y - z * x), -1.0, 1.0))
+        w, x_q, y_q, z_q = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
+        roll = float(np.arctan2(2 * (w * x_q + y_q * z_q), 1 - 2 * (x_q * x_q + y_q * y_q)))
+        pitch = float(np.arcsin(np.clip(2 * (w * y_q - z_q * x_q), -1.0, 1.0)))
+        yaw = float(np.arctan2(2 * (w * z_q + x_q * y_q), 1 - 2 * (y_q * y_q + z_q * z_q)))
 
         actions = np.zeros(12, dtype=np.float32)
         for i in range(4):
             phase = self.phases[i]
-            hip_act = -0.5 * roll if (i % 2 == 0) else 0.5 * roll
-            thigh_osc = 0.25 * np.sin(2.5 * t * 2 * np.pi + phase)
-            calf_osc = 0.30 * np.cos(2.5 * t * 2 * np.pi + phase)
-            pitch_corr = -0.4 * pitch if (i < 2) else 0.4 * pitch
+            hip_stab = -0.12 * roll - 0.05 * yaw
+            yaw_diff = 0.08 * yaw if (i in [0, 2]) else -0.08 * yaw
+            thigh_osc = 0.22 * np.sin(2.0 * t * 2 * np.pi + phase) + yaw_diff
+            calf_osc = 0.22 * np.cos(2.0 * t * 2 * np.pi + phase)
+            pitch_corr = -0.2 * pitch if (i in [0, 1]) else 0.2 * pitch
 
-            actions[i * 3 + 0] = np.clip(hip_act / 0.35, -1.0, 1.0)
-            actions[i * 3 + 1] = np.clip((thigh_osc + pitch_corr) / 0.45, -1.0, 1.0)
-            actions[i * 3 + 2] = np.clip(calf_osc / 0.50, -1.0, 1.0)
+            actions[i * 3 + 0] = np.clip(hip_stab / 0.20, -1.0, 1.0)
+            actions[i * 3 + 1] = np.clip((thigh_osc + pitch_corr) / 0.30, -1.0, 1.0)
+            actions[i * 3 + 2] = np.clip(calf_osc / 0.30, -1.0, 1.0)
 
         noise = self.rng.normal(0.0, noise_level, size=actions.shape).astype(np.float32)
         return np.clip(actions + noise, -1.0, 1.0)
@@ -71,13 +73,13 @@ def collect_unitree_a1_dataset(
         ep_term: list[bool] = []
         ep_trunc: list[bool] = []
 
-        noise_lvl = 0.03 if (ep % 2 == 0) else 0.12  # Mix expert and exploration
+        noise_lvl = 0.03 if (ep % 2 == 0) else 0.08  # Expert and exploratory
 
         for step in range(max_steps_per_episode):
-            # Apply random kick disturbances during collection (every 50-80 steps)
+            # Apply random kick disturbances during collection (every 70 steps)
             if step % 70 == 0 and step > 0:
-                kick_x = float(policy.rng.uniform(-30.0, 30.0))
-                kick_y = float(policy.rng.uniform(-25.0, 25.0))
+                kick_x = float(policy.rng.uniform(-8.0, 8.0))
+                kick_y = float(policy.rng.uniform(-10.0, 10.0))
                 env.apply_kick((kick_x, kick_y, 0.0))
 
             action = policy(obs, step, noise_level=noise_lvl)

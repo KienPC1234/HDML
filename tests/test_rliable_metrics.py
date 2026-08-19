@@ -38,8 +38,9 @@ def test_probability_of_improvement():
     assert lo >= 0.95
 
     # Equal distributions should have prob around 0.5
-    eq_a = np.random.randn(1, 50)
-    eq_b = np.random.randn(1, 50)
+    rng = np.random.default_rng(42)
+    eq_a = rng.standard_normal((1, 200))
+    eq_b = rng.standard_normal((1, 200))
     prob_eq, _, _ = compute_probability_of_improvement(eq_a, eq_b, num_bootstraps=200, seed=42)
     assert 0.35 <= prob_eq <= 0.65
 
