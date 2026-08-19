@@ -80,15 +80,18 @@ class QuadrupedDogEnv(gym.Env):
         # Map normalized action [-1, 1] to target joint positions (PD position servos)
         q_target = np.zeros(12, dtype=np.float64)
         for i in range(4):
-            q_target[i * 3 + 0] = 0.0 + 0.35 * float(act[i * 3 + 0])
-            q_target[i * 3 + 1] = 0.85 + 0.45 * float(act[i * 3 + 1])
-            q_target[i * 3 + 2] = -1.75 + 0.50 * float(act[i * 3 + 2])
+            base_hip = -0.06 if (i in [0, 2]) else 0.06
+            q_target[i * 3 + 0] = base_hip + 0.20 * float(act[i * 3 + 0])
+            q_target[i * 3 + 1] = 0.85 + 0.30 * float(act[i * 3 + 1])
+            q_target[i * 3 + 2] = -1.80 + 0.30 * float(act[i * 3 + 2])
         self.data.ctrl[:] = q_target
 
         pos_before = self.data.qpos[0]
         # Step MuJoCo physics frame_skip times (dt = 0.002 * 10 = 0.02s => 50 Hz control loop)
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
+        # Clear external kick impulse so forces are instantaneous impacts
+        self.data.qfrc_applied[:] = 0.0
 
         pos_after = self.data.qpos[0]
         obs = self._get_obs()
@@ -96,22 +99,24 @@ class QuadrupedDogEnv(gym.Env):
         # Rewards:
         # 1. Forward velocity reward
         forward_reward = (pos_after - pos_before) / (self.frame_skip * 0.002)
-        # 2. Stability / upright posture reward (torso z in [0.22, 0.30])
+        # 2. Stability / upright posture reward (torso z in [0.22, 0.32])
         torso_z = float(obs[0])
-        healthy_reward = 1.0 if (0.22 <= torso_z <= 0.32) else -1.5
+        w, x_q, y_q, z_q = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
+        roll = float(np.arctan2(2 * (w * x_q + y_q * z_q), 1 - 2 * (x_q * x_q + y_q * y_q)))
+        healthy_reward = 1.0 if (0.22 <= torso_z <= 0.32 and abs(roll) < 0.35) else -1.5
         # 3. Energy efficiency penalty
         ctrl_cost = 0.002 * float(np.sum(np.square(act)))
 
         reward = float(1.5 * forward_reward + healthy_reward - ctrl_cost)
 
-        terminated = not (0.15 <= torso_z <= 0.36)
+        terminated = not (0.16 <= torso_z <= 0.38 and abs(roll) < 0.80)
         truncated = self.step_count >= self.max_episode_steps
 
-        return obs, reward, terminated, truncated, {"forward_vel": forward_reward, "height": torso_z}
+        return obs, reward, terminated, truncated, {"forward_vel": forward_reward, "height": torso_z, "roll": roll}
 
     def apply_kick(self, force_xyz: tuple[float, float, float]) -> None:
-        """Apply an external physical kick/impact force to the quadruped dog's torso."""
-        self.data.qfrc_applied[0:3] += np.array(force_xyz, dtype=np.float64)
+        """Apply an external instantaneous physical kick/impact force to the quadruped dog's torso."""
+        self.data.qfrc_applied[0:3] = np.array(force_xyz, dtype=np.float64)
 
     def render(self) -> np.ndarray | None:
         if self._renderer is None:
