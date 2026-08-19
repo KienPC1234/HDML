@@ -15,9 +15,17 @@ from hdml.models.baselines import (
     MLPBCBaseline,
 )
 from hdml.models.ablations import MambaMLPHeadAblation, TransformerLiquidHeadAblation
+from hdml.models.foundation import (
+    HDMLFoundationModel,
+    UniversalEmbodimentAdapter,
+    EmbodimentSpec,
+)
 
 
 __all__ = [
+    "HDMLFoundationModel",
+    "UniversalEmbodimentAdapter",
+    "EmbodimentSpec",
     "CrossModalFusion",
     "VisualPatchEncoder",
     "MambaCognitiveBackbone",
