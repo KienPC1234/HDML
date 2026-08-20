@@ -8,7 +8,7 @@ import torch.nn as nn
 import numpy as np
 
 from hdml.models.foundation import HDMLFoundationModel, UniversalEmbodimentAdapter
-from hdml.data.multi_embodiment_dataset import MultiEmbodimentDataset, collate_multi_embodiment
+from hdml.data.multi_embodiment_dataset import FastEmbodimentBuffer, FastMultiEmbodimentManager
 
 
 def test_universal_adapter_shapes_and_gradients() -> None:
@@ -119,8 +119,8 @@ def test_hdml_foundation_backbone_freezing() -> None:
         assert p.requires_grad
 
 
-def test_multi_embodiment_dataset_collation(tmp_path) -> None:
-    # Create synthetic trajectory files for two embodiments
+def test_fast_multi_embodiment_manager_sampling(tmp_path) -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cheetah_path = tmp_path / "cheetah.npz"
     ant_path = tmp_path / "ant.npz"
 
@@ -139,19 +139,15 @@ def test_multi_embodiment_dataset_collation(tmp_path) -> None:
         terminals=np.zeros(80, dtype=bool),
     )
 
-    dataset = MultiEmbodimentDataset(
+    manager = FastMultiEmbodimentManager(
         embodiment_paths={"cheetah": cheetah_path, "ant": ant_path},
         context_length=15,
     )
-    assert len(dataset) > 0
+    assert manager.total_steps == 180
 
-    loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True, collate_fn=collate_multi_embodiment)
-    batch_dict = next(iter(loader))
+    batch = manager.sample_embodiment_batch("cheetah", batch_size=8, device=device)
+    assert batch["states"].shape == (8, 15, 17)
+    assert batch["actions_in"].shape == (8, 15, 6)
+    assert batch["actions_target"].shape == (8, 15, 6)
+    assert batch["rtgs"].shape == (8, 15, 1)
 
-    assert len(batch_dict) > 0
-    for name, batch in batch_dict.items():
-        assert "states" in batch
-        assert "actions_in" in batch
-        assert "actions_target" in batch
-        assert "rtgs" in batch
-        assert batch["states"].shape[1] == 15

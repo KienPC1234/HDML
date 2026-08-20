@@ -3,81 +3,81 @@ HDML RLIABLE BENCHMARK RESULTS - HalfCheetah-v5
 
 STANDARD BENCHMARK:
 - HDML (Decision Mamba + Liquid CfC - Ours):
-    IQM (95% CI): 92.20 [80.23, 99.16]
-    D4RL Mean Score: 92.20
-    Raw Return: 11166.07 +/- 1055.30
-    Smoothness (Jerk): 0.9475
-    Inference Latency: 12.82 ms (78.0 Hz)
+    IQM (95% CI): 88.09 [41.43, 98.51]
+    D4RL Mean Score: 76.43
+    Raw Return: 9208.69 +/- 3683.75
+    Smoothness (Jerk): 0.7862
+    Inference Latency: 12.81 ms (78.0 Hz)
     Parameters: 1,441,713
 
 - Diffusion Policy (DDPM 10-step Denoising):
-    IQM (95% CI): -0.24 [-0.93, 0.33]
-    D4RL Mean Score: -0.24
-    Raw Return: -310.39 +/- 64.62
-    Smoothness (Jerk): 1.2116
-    Inference Latency: 6.56 ms (152.5 Hz)
+    IQM (95% CI): -0.41 [-0.55, 0.18]
+    D4RL Mean Score: -0.27
+    Raw Return: -313.53 +/- 45.37
+    Smoothness (Jerk): 1.2598
+    Inference Latency: 6.71 ms (149.1 Hz)
     Parameters: 153,606
 
 - Decision Transformer (Causal Attention DT):
-    IQM (95% CI): 71.16 [-0.08, 108.79]
-    D4RL Mean Score: 71.16
-    Raw Return: 8554.30 +/- 6257.17
-    Smoothness (Jerk): 0.7304
-    Inference Latency: 2.24 ms (447.0 Hz)
+    IQM (95% CI): 95.60 [25.36, 107.79]
+    D4RL Mean Score: 79.10
+    Raw Return: 9540.62 +/- 5127.89
+    Smoothness (Jerk): 0.8109
+    Inference Latency: 2.29 ms (436.2 Hz)
     Parameters: 1,206,918
 
 - Implicit Q-Learning (IQL / Value-Advantage):
-    IQM (95% CI): 2.04 [1.80, 2.45]
-    D4RL Mean Score: 2.04
-    Raw Return: -26.93 +/- 35.94
-    Smoothness (Jerk): 0.0102
-    Inference Latency: 0.24 ms (4209.6 Hz)
+    IQM (95% CI): 1.84 [1.79, 2.26]
+    D4RL Mean Score: 1.95
+    Raw Return: -38.30 +/- 31.20
+    Smoothness (Jerk): 0.0080
+    Inference Latency: 0.24 ms (4119.4 Hz)
     Parameters: 286,985
 
 - Decision RNN (LSTM Recurrent Policy):
-    IQM (95% CI): 103.15 [78.80, 115.38]
-    D4RL Mean Score: 103.15
-    Raw Return: 12526.21 +/- 2137.80
-    Smoothness (Jerk): 0.9293
-    Inference Latency: 1.03 ms (971.0 Hz)
+    IQM (95% CI): 113.91 [89.56, 115.45]
+    D4RL Mean Score: 107.21
+    Raw Return: 13029.75 +/- 1775.50
+    Smoothness (Jerk): 0.9689
+    Inference Latency: 1.05 ms (951.3 Hz)
     Parameters: 1,008,390
 
 - MLP-BC (Standard Feedforward Reactive):
-    IQM (95% CI): -0.25 [-0.26, -0.24]
-    D4RL Mean Score: -0.25
-    Raw Return: -311.80 +/- 1.65
-    Smoothness (Jerk): 0.0029
-    Inference Latency: 0.29 ms (3391.5 Hz)
+    IQM (95% CI): -0.26 [-0.26, -0.24]
+    D4RL Mean Score: -0.26
+    Raw Return: -311.94 +/- 1.36
+    Smoothness (Jerk): 0.0028
+    Inference Latency: 0.30 ms (3336.0 Hz)
     Parameters: 72,198
 
 PERTURBATION ROBUSTNESS BENCHMARK:
 - HDML (Decision Mamba + Liquid CfC - Ours):
-    Perturbed IQM (95% CI): 18.81 [8.64, 28.06]
+    Perturbed IQM (95% CI): 18.88 [9.85, 26.92]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 0.6432
+    Smoothness (Jerk): 0.6552
 
 - Diffusion Policy (DDPM 10-step Denoising):
-    Perturbed IQM (95% CI): 0.31 [-0.38, 1.57]
+    Perturbed IQM (95% CI): -0.29 [-0.77, 0.52]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 1.2763
+    Smoothness (Jerk): 1.2669
 
 - Decision Transformer (Causal Attention DT):
-    Perturbed IQM (95% CI): 2.46 [0.11, 5.31]
+    Perturbed IQM (95% CI): 1.17 [0.32, 4.19]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 0.3338
+    Smoothness (Jerk): 0.3118
 
 - Implicit Q-Learning (IQL / Value-Advantage):
-    Perturbed IQM (95% CI): 2.11 [2.06, 2.18]
+    Perturbed IQM (95% CI): 2.11 [2.03, 2.32]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 0.1145
+    Smoothness (Jerk): 0.1174
 
 - Decision RNN (LSTM Recurrent Policy):
-    Perturbed IQM (95% CI): 7.66 [4.14, 11.31]
+    Perturbed IQM (95% CI): 7.14 [4.22, 10.71]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 0.4036
+    Smoothness (Jerk): 0.3844
 
 - MLP-BC (Standard Feedforward Reactive):
-    Perturbed IQM (95% CI): -0.36 [-0.41, -0.29]
+    Perturbed IQM (95% CI): -0.34 [-0.40, -0.30]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 0.3394
+    Smoothness (Jerk): 0.3385
 

@@ -147,55 +147,59 @@ python scripts/collect_data.py --env HalfCheetah-v4 --num-episodes 50 --output d
 # Train HDML offline on collected trajectories
 python scripts/train_offline.py \
     --config configs/unitree_a1_default.yaml \
-    --dataset data/unitree_a1_trajectories.npz \
-    --stride 4 \
-    --epochs 40 \
-    --batch-size 256 \
-    --device cuda
-```
+### 2. Multi-Embodiment Foundation Model (Zero-Shot & Few-Shot Transfer)
 
-### Benchmarking & Evaluation
+Pre-trained across 11 distinct physics morphologies (1,735,673 physical transitions). Adapting to novel robot embodiments with over 93% (11.6M parameters) of the core backbone frozen:
+
+| Target Robot | Morphology | State / Act Dim | Frozen % | Adapt Time | Action Loss | Jerk ($\|\Delta^2 a\|$) |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Unitree A1** | 12-DoF Quadruped | $53\text{D} \to 12\text{D}$ | 93.7% | 30.0s | **0.00602** | 0.1401 |
+| **Humanoid 3D** | 17-DoF 3D Biped | $348\text{D} \to 17\text{D}$ | 92.8% | 29.4s | **0.02579** | **0.0689** |
+| **Swimmer** | 2-DoF Serpentine | $8\text{D} \to 2\text{D}$ | 93.9% | 29.3s | 0.16664 | **0.0149** |
+| **Ant** | 8-DoF Quadruped | $105\text{D} \to 8\text{D}$ | 93.5% | 29.4s | 0.16161 | 0.1677 |
+| **Hopper** | 3-DoF Monopod | $11\text{D} \to 3\text{D}$ | 93.8% | 29.0s | 0.15356 | 0.1798 |
+| **Walker2d** | 6-DoF Bipedal | $17\text{D} \to 6\text{D}$ | 93.8% | 29.2s | 0.10298 | 0.7174 |
+
+---
+
+## Unified Command-Line Interface (`hdml_cli.py`)
+
+All core operations are accessible via the unified multi-functional CLI:
 
 ```bash
-# Train baseline models for comparison
-python scripts/train_baselines.py \
-    --config configs/halfcheetah_v5_default.yaml \
-    --dataset data/halfcheetah_v5_expert.npz \
-    --model all \
-    --epochs 20
+# 1. Evaluate Multi-Embodiment Transfer on Frozen Foundation Backbone
+python scripts/hdml_cli.py benchmark-foundation
 
-# Run evaluation suite across all architectures
-python scripts/benchmark_baselines.py \
+# 2. Few-Shot Fine-Tuning on a New Custom Robot Embodiment
+python scripts/hdml_cli.py evaluate-transfer \
+    --checkpoint checkpoints/hdml_foundation/hdml_foundation_best.pt \
+    --target-embodiment my_custom_robot \
+    --target-dataset data/my_robot_data.npz \
+    --prop-dim 24 --action-dim 8 --epochs 10
+
+# 3. Benchmark HDML against all baselines (DT, RNN, Diffusion, IQL, MLP)
+python scripts/hdml_cli.py benchmark-baselines \
+    --config configs/halfcheetah_v5_default.yaml \
+    --checkpoint checkpoints/halfcheetah_v5/best_model.pt
+
+# 4. Export to ONNX for High-Frequency Edge Deployment
+python scripts/hdml_cli.py export-onnx \
     --config configs/halfcheetah_v5_default.yaml \
     --checkpoint checkpoints/halfcheetah_v5/best_model.pt \
-    --episodes 5 \
-    --device cuda
+    --output-dir deployment/onnx
 ```
 
-### Automated Testing
+---
 
-```bash
-# Run unit and integration tests
-pytest tests/ -v
-```
+## 📜 Scientific Preprint
 
-## Repository Structure
+The complete publication manuscript is available in [`paper/`](paper/):
+- **Manuscript PDF**: [`paper/main.pdf`](paper/main.pdf)
+- **LaTeX Source**: [`paper/main.tex`](paper/main.tex)
+- **BibTeX References**: [`paper/references.bib`](paper/references.bib)
 
-```
-HDML_Model/
-├── hdml/
-│   ├── models/           # Mamba-3, CfC Liquid Head, HiQC Critic, Flow Policy, Baselines
-│   ├── data/             # Trajectory Collector, Dataset & Tensor Loaders
-│   ├── training/         # Loss Formulations (PAVE, Grad-CAPS, Expectile) & Trainer
-│   ├── evaluation/       # Closed-loop Simulation, PACE Controller & Perturbation Suite
-│   └── utils/            # Kinematic Metrics, Configs, Reference Bounds
-├── configs/              # Environment & Model YAML Configurations
-├── scripts/              # Training, Benchmarking & Video Generation Scripts
-├── videos/               # Rendered Simulation Video Artifacts
-├── research.md           # Theoretical Formulations & Mathematical Analysis
-└── tests/                # Automated PyTest Test Suite
-```
+---
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+This project and its pre-trained model weights (`hdml_foundation_best.pt`) are open-sourced under the Apache License 2.0. See [LICENSE](LICENSE) for details.
