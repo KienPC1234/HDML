@@ -196,7 +196,7 @@ Standard PyTorch \texttt{DataLoader} pipelines suffer severe CPU multiprocessing
 \label{sec:experiments}
 
 \subsection{Multi-Embodiment Few-Shot Transfer Benchmark}
-To evaluate representation transferability, we freeze \textbf{11,989,918 parameters} (95.9\%--97.0\% of the total 12.4M parameters per embodiment) of the pre-trained HDML backbone ($d_{\text{model}}=384$, 8 layers) and fine-tune only the lightweight Universal Adapter (376k--516k parameters) for 3 epochs (30 seconds) on target robot morphologies.
+To evaluate representation transferability, we evaluate the generalist \textbf{HDML Foundation Model} ($d_{\text{model}}=384$, 8 layers, total 12.4M parameters per embodiment). We freeze \textbf{11,989,918 parameters} (95.9\%--97.0\% of the total parameters) of the pre-trained backbone and fine-tune only the lightweight Universal Adapter (376k--516k parameters) for 3 epochs (under 30 seconds) on target robot morphologies.
 
 \begin{table}[h]
 \centering
@@ -220,7 +220,7 @@ To evaluate representation transferability, we freeze \textbf{11,989,918 paramet
 As shown in Table~\ref{tab:foundation_benchmark}, HDML achieves sub-0.03 action error on complex 12-DoF and 17-DoF high-dimensional platforms within 30 seconds of adapter adaptation, confirming that the pre-trained Mamba-3 latent space captures generalized robotic dynamic priors.
 
 \subsection{Equal-Compute Baseline Comparison}
-To ensure strict scientific parity, all baseline architectures---Decision Transformer (DT), Decision RNN (LSTM), Diffusion Policy (DDPM 10-step), Implicit Q-Learning (IQL), and MLP-BC---were trained on the identical 1M-step HalfCheetah expert dataset. Under context windowing ($T=20$) and an 85/15 train/val split, the training set generates 2,490 full batches of size $B=256$ plus 1 remainder batch per epoch. Training across 4 epochs produces exactly $4 \times 2{,}490 = 9{,}960$ full batches plus 3 remainder batches at epoch transitions, totaling \textbf{9,963 gradient steps} under AdamW ($\text{lr}=3\times 10^{-4}$).
+To evaluate architectural efficiency on single-task control, we instantiate a compact standalone configuration of HDML (1.44M parameters, trained from scratch) to ensure fair, equal-compute comparison against baseline architectures of matched parameter scale (DT: 1.21M, RNN: 1.01M). All models---Decision Transformer (DT), Decision RNN (LSTM), Diffusion Policy (DDPM 10-step), Implicit Q-Learning (IQL), and MLP-BC---were trained on the identical 1M-step HalfCheetah dataset. Under context windowing ($T=20$) and an 85/15 train/val split (850,000 training windows), a batch size of $B=256$ yields $\lceil 850{,}000 / 256 \rceil = 3{,}321$ batches per epoch (3,320 full batches plus 1 remainder batch). Training for 3 epochs produces exactly $3{,}321 \times 3 = \mathbf{9{,}963}$ \textbf{gradient steps} under AdamW ($\text{lr}=3\times 10^{-4}$).
 
 \begin{table}[h]
 \centering
