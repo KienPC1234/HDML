@@ -136,7 +136,7 @@ If you find this work useful in your research, please cite:
 @article{kien2026hdml,
   title={HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control},
   author={Kien, Ha Tri},
-  journal={arXiv preprint / Zenodo},
+  journal={Zenodo},
   year={2026},
   doi={10.5281/zenodo.22020016},
   url={https://doi.org/10.5281/zenodo.22020016}
