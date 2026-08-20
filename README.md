@@ -15,7 +15,7 @@
 
 High-dimensional continuous control in multi-articulated robotic systems faces a fundamental multi-scale challenge: reconciling long-horizon macro-cognitive reasoning over temporal state-action trajectories with high-frequency, continuous-time motor execution on physical actuators. While discrete Transformer-based sequence models capture long-term behavioral dependencies, they incur quadratic computational complexity $\mathcal{O}(T^2)$, exhibit vulnerability to distribution shifts under physical perturbations, and suffer from high-frequency torque chatter.
 
-**HDML** (**H**ierarchical **D}ecision **M**amba-**L**iquid) is a generalist multi-embodiment foundation architecture that couples:
+**HDML** (**H**ierarchical **D**ecision **M**amba-**L**iquid) is a generalist multi-embodiment foundation architecture that couples:
 1. **Mamba-3 Cognitive Backbone**: An 8-layer Selective State Space Model ($d_{\text{model}}=384$) augmented with Rotary Position Embeddings (RoPE) for $\mathcal{O}(1)$ streaming inference and $SO(3)$ phase tracking.
 2. **Closed-Form Continuous-Time (CfC) Motor Head**: A continuous-time Liquid Neural Network ODE filter ($d_{\text{bb}}=192$, $d_{\text{cfc}}=96$) that generates smooth, chatter-free actuator torques and rejects external force disturbances.
 
