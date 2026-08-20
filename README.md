@@ -1,5 +1,10 @@
 # Hierarchical Decision Mamba-Liquid (HDML)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22020016.svg)](https://doi.org/10.5281/zenodo.22020016)
+[![GitHub Release](https://img.shields.io/github/v/release/KienPC1234/HDML?color=blue)](https://github.com/KienPC1234/HDML/releases/tag/v1.0.0)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11.15-blue.svg)](https://python.org)
+
 HDML is a continuous-control architecture designed for high-dimensional 3D robotic systems, including multi-articulated quadrupeds, humanoids, and continuous locomotion platforms.
 
 The framework couples **Selective State Space Models (Mamba-3)** with **Closed-Form Continuous-Time Liquid Neural Networks (CfC / LTC)** to bridge the gap between long-horizon cognitive planning and high-frequency, perturbation-resilient micro-actuation.
@@ -191,12 +196,24 @@ python scripts/hdml_cli.py export-onnx \
 
 ---
 
-## 📜 Scientific Preprint
+## 📜 Scientific Preprint & Citation
 
 The complete publication manuscript is available in [`paper/`](paper/):
+- **Zenodo DOI**: [10.5281/zenodo.22020016](https://doi.org/10.5281/zenodo.22020016)
 - **Manuscript PDF**: [`paper/main.pdf`](paper/main.pdf)
 - **LaTeX Source**: [`paper/main.tex`](paper/main.tex)
 - **BibTeX References**: [`paper/references.bib`](paper/references.bib)
+
+```bibtex
+@article{kien2026hdml,
+  title={HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control},
+  author={Kien, Ha Tri},
+  journal={arXiv preprint / Zenodo},
+  year={2026},
+  doi={10.5281/zenodo.22020016},
+  url={https://doi.org/10.5281/zenodo.22020016}
+}
+```
 
 ---
 
