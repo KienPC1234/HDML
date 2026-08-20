@@ -383,9 +383,9 @@ def main() -> None:
         f.write("=" * 100 + "\n\n")
         f.write("STANDARD BENCHMARK:\n")
         for res in results_std:
-            iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
+            point_est, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
             f.write(f"- {res['name']}:\n")
-            f.write(f"    IQM (95% CI): {iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
+            f.write(f"    IQM (95% CI): {point_est:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
             f.write(f"    D4RL Mean Score: {res['d4rl_normalized_score']:.2f}\n")
             f.write(f"    Raw Return: {res['mean_return']:.2f} +/- {res['std_return']:.2f}\n")
             f.write(f"    Smoothness (Jerk): {res['mean_smoothness_jerk']:.4f}\n")
@@ -393,9 +393,9 @@ def main() -> None:
             f.write(f"    Parameters: {res['params_count']:,}\n\n")
         f.write("PERTURBATION ROBUSTNESS BENCHMARK:\n")
         for res in results_rob:
-            iqm_pt, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
+            point_est, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
             f.write(f"- {res['name']}:\n")
-            f.write(f"    Perturbed IQM (95% CI): {iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
+            f.write(f"    Perturbed IQM (95% CI): {point_est:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
             f.write(f"    Survival Rate: {res['survival_rate']:.1f}%\n")
             f.write(f"    Smoothness (Jerk): {res['mean_smoothness_jerk']:.4f}\n\n")
     logger.info(f"Wrote benchmark report to: {res_file}")
