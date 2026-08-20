@@ -1,4 +1,4 @@
-HDML-V2 RLIABLE BENCHMARK RESULTS - HalfCheetah-v5
+HDML RLIABLE BENCHMARK RESULTS - HalfCheetah-v5
 ====================================================================================================
 
 STANDARD BENCHMARK:
@@ -7,15 +7,15 @@ STANDARD BENCHMARK:
     D4RL Mean Score: 76.43
     Raw Return: 9208.69 +/- 3683.75
     Smoothness (Jerk): 0.7862
-    Inference Latency: 12.93 ms (77.3 Hz)
+    Inference Latency: 12.81 ms (78.0 Hz)
     Parameters: 1,441,713
 
 - Diffusion Policy (DDPM 10-step Denoising):
-    IQM (95% CI): -0.11 [-0.46, 0.53]
-    D4RL Mean Score: -0.04
-    Raw Return: -285.21 +/- 59.59
-    Smoothness (Jerk): 1.2983
-    Inference Latency: 6.71 ms (148.9 Hz)
+    IQM (95% CI): -0.41 [-0.55, 0.18]
+    D4RL Mean Score: -0.27
+    Raw Return: -313.53 +/- 45.37
+    Smoothness (Jerk): 1.2598
+    Inference Latency: 6.71 ms (149.1 Hz)
     Parameters: 153,606
 
 - Decision Transformer (Causal Attention DT):
@@ -23,7 +23,7 @@ STANDARD BENCHMARK:
     D4RL Mean Score: 79.10
     Raw Return: 9540.62 +/- 5127.89
     Smoothness (Jerk): 0.8109
-    Inference Latency: 2.25 ms (444.9 Hz)
+    Inference Latency: 2.29 ms (436.2 Hz)
     Parameters: 1,206,918
 
 - Implicit Q-Learning (IQL / Value-Advantage):
@@ -31,7 +31,7 @@ STANDARD BENCHMARK:
     D4RL Mean Score: 1.95
     Raw Return: -38.30 +/- 31.20
     Smoothness (Jerk): 0.0080
-    Inference Latency: 0.25 ms (4051.6 Hz)
+    Inference Latency: 0.24 ms (4119.4 Hz)
     Parameters: 286,985
 
 - Decision RNN (LSTM Recurrent Policy):
@@ -39,7 +39,7 @@ STANDARD BENCHMARK:
     D4RL Mean Score: 107.21
     Raw Return: 13029.75 +/- 1775.50
     Smoothness (Jerk): 0.9689
-    Inference Latency: 1.05 ms (953.5 Hz)
+    Inference Latency: 1.05 ms (951.3 Hz)
     Parameters: 1,008,390
 
 - MLP-BC (Standard Feedforward Reactive):
@@ -47,7 +47,7 @@ STANDARD BENCHMARK:
     D4RL Mean Score: -0.26
     Raw Return: -311.94 +/- 1.36
     Smoothness (Jerk): 0.0028
-    Inference Latency: 0.30 ms (3294.2 Hz)
+    Inference Latency: 0.30 ms (3336.0 Hz)
     Parameters: 72,198
 
 PERTURBATION ROBUSTNESS BENCHMARK:
@@ -57,9 +57,9 @@ PERTURBATION ROBUSTNESS BENCHMARK:
     Smoothness (Jerk): 0.6552
 
 - Diffusion Policy (DDPM 10-step Denoising):
-    Perturbed IQM (95% CI): -0.44 [-1.05, -0.05]
+    Perturbed IQM (95% CI): -0.29 [-0.77, 0.52]
     Survival Rate: 100.0%
-    Smoothness (Jerk): 1.2760
+    Smoothness (Jerk): 1.2669
 
 - Decision Transformer (Causal Attention DT):
     Perturbed IQM (95% CI): 1.17 [0.32, 4.19]
