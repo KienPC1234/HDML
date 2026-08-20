@@ -23,37 +23,12 @@ High-dimensional continuous control in multi-articulated robotic systems faces a
 
 ## System Architecture
 
-```
-                             HDML System Topology
+![HDML System Architecture](paper/figures/hdml_architecture.png)
 
-   Sensory Inputs:
-   [Proprioceptive State s_t ] ---> [Universal State Adapter ] ---+
-   [Past Action Token a_{t-1}] ---> [Universal Action Adapter] ---+---> [Multimodal Token Fusion] u_t
-   [Return-to-Go \hat{R}_t   ] ---> [Linear Projection       ] ---+
-   [Timestep Embedding       ] ---> [Positional Embedding    ] ---+
-                                                                        |
-     +------------------------------------------------------------------+
-     |
-     v (Macro-Planning: 10–20 Hz)
-+-------------------------------------------------------------------------------+
-|                      MAMBA-3 COGNITIVE BACKBONE (SSM)                         |
-|  - 2nd-Order Exponential-Trapezoidal Discretization                           |
-|  - Rotary Position Embeddings (RoPE) for Phase Dynamics                       |
-|  - Generates Latent Representation z_t and Subgoal Intent c_t                 |
-+-------------------------------------------------------------------------------+
-     |
-     v (Micro-Actuation: 100–500 Hz)
-+-------------------------------------------------------------------------------+
-|                    CONTINUOUS LIQUID MOTOR FILTER & PACE                      |
-|  - Optimal Transport Flow Matching Action Generation                          |
-|  - PAVE (Mixed Hessian \nabla_{sa}^2 Q) & Grad-CAPS Regularization            |
-|  - Closed-Form Continuous-Time (CfC) Neural ODE Filter                        |
-|  - Phase-Aware Chunk Execution (PACE) Safety Watchdog                         |
-+-------------------------------------------------------------------------------+
-     |
-     v
-Target Continuous Joint Torques a_t (Physical Actuators / MuJoCo)
-```
+The HDML architecture establishes a hierarchical dual-rate processing paradigm:
+1. **Sensory Token Fusion**: Multi-modal proprioception $s_t$, past actions $a_{t-1}$, and return targets $\hat{R}_t$ are projected via lightweight embodiment adapters into a unified sequence token $u_t \in \mathbb{R}^{384}$.
+2. **Macro-Cognitive Sequence Modeling (10–20 Hz)**: An 8-layer Mamba-3 Selective State Space Model processes long-horizon dependencies with linear $\mathcal{O}(T)$ training and $\mathcal{O}(1)$ inference, outputting latent intent subgoals $c_t$ and value estimates $\hat{V}(s_t)$.
+3. **Continuous Motor Filter & Micro-Actuation (100–500 Hz)**: Action chunks generated via Optimal Transport Flow Matching are continuously filtered through a Closed-Form Liquid Neural ODE (CfC), dynamically adjusting stiffness $\tau(s_t)$ and executing chatter-free joint torques $a_t$.
 
 ---
 

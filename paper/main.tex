@@ -80,6 +80,13 @@ Recent efforts such as RT-2 \cite{brohan2023rt2} and Open X-Embodiment \cite{ope
 \section{Methodology}
 \label{sec:method}
 
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/hdml_architecture.png}
+    \caption{\textbf{Hierarchical Decision Mamba-Liquid (HDML) Architecture.} HDML establishes a dual-rate processing hierarchy: macro-cognitive sequence modeling ($10-20\text{ Hz}$) via an 8-layer Mamba-3 SSM backbone, coupled with micro-actuation continuous-time motor execution ($100-500\text{ Hz}$) via a Closed-Form Liquid Neural ODE (CfC). Heterogeneous sensory states $s_t$, target returns $\hat{R}_t$, and prior actions $a_{t-1}$ are projected into unified sequence tokens $u_t \in \mathbb{R}^{384}$. Optimal Transport Flow Matching produces multi-step action chunks $\mathbf{a}_{t:t+k}$ filtered dynamically by the CfC network to eliminate mechanical chatter and reject external perturbations.}
+    \label{fig:architecture}
+\end{figure*}
+
 \subsection{Problem Formulation and Multi-Embodiment Tokenization}
 We consider an offline multi-embodiment dataset $\mathcal{D} = \{\tau^{(i)}\}_{i=1}^N$ collected across diverse robot morphologies $\mathcal{M}_e \in \mathcal{E}$, where trajectory $\tau = (s_1, a_1, r_1, \dots, s_T, a_T, r_T)$. Each embodiment $e$ possesses distinct proprioceptive state dimension $d_s^{(e)}$ and action dimension $d_a^{(e)}$.
 
