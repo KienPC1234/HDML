@@ -48,7 +48,7 @@ The emergence of sequence modeling paradigms in offline reinforcement learning, 
 \begin{enumerate}
     \item \textbf{The Temporal Scale Dichotomy:} High-level behavioral planning operates over macroscopic horizons (e.g., $1$--$5\text{ Hz}$ cognitive intent), whereas joint torque actuation requires high-frequency closed-loop execution ($50$--$500\text{ Hz}$) to reject physical disturbances and maintain dynamic balance.
     \item \textbf{Actuator Smoothness and Mechanical Jerk:} Standard feedforward and attention-based policies output discrete step-to-step action jumps, inducing high mechanical jerk $\mathcal{J} = \frac{1}{T}\sum_t \|\Delta^2 a_t\|_2$. External low-pass filtering introduces phase lag and non-Markovian dynamics, degrading closed-loop stability.
-    \item \textbf{Covariate Shift under Perturbations:} Attention mechanisms over past context histories are notoriously fragile when unexpected external impulses or sensor noise violate the training distribution, leading to compounding autoregressive errors and catastrophic failure.
+    \item \textbf{Covariate Shift under Perturbations:} Attention mechanisms over past context histories exhibit high sensitivity when unexpected external force impulses or sensor noise induce distribution shifts, leading to compounding autoregressive errors and policy failure.
 \end{enumerate}
 
 To resolve this multi-scale dichotomy, we introduce \textbf{HDML} (\textbf{H}ierarchical \textbf{D}ecision \textbf{M}amba-\textbf{L}iquid), a unified architecture bridging macroscopic sequence reasoning and microscopic continuous-time dynamics. HDML establishes a dual-rate hierarchy: an 8-layer Selective State Space Model (\textbf{Mamba-3}) backbone \cite{gu2023mamba} augmented with Rotary Position Embeddings (RoPE) \cite{su2024roformer} processes multi-modal state-return tokens with linear $\mathcal{O}(T)$ training and $\mathcal{O}(1)$ streaming complexity, while a Closed-Form Continuous-Time (\textbf{CfC}) Neural ODE head \cite{hasani2022closed, lechner2020neural} smooths high-frequency motor actuation directly in the continuous-time domain.
@@ -197,7 +197,7 @@ We construct a unified benchmark corpus comprising exactly \textbf{1,735,673 tra
 The exact sum across all 11 domains is $1{,}000{,}000 + 6{,}970 + 8{,}321 + 15{,}000 + 2{,}240 + 300{,}000 + 18{,}375 + 240{,}000 + 6{,}712 + 100{,}000 + 38{,}055 = 1{,}735{,}673$ transitions.
 
 \subsection{High-Throughput Zero-Copy Data Pipeline}
-Standard PyTorch \texttt{DataLoader} pipelines suffer severe CPU multiprocessing bottlenecks when collating heterogeneous trajectory slices. We designed \texttt{FastEmbodimentBuffer} with pinned GPU host memory and vectorized slice indices. This increased GPU computing utilization from 7\% (32W) to \textbf{82\% (169W)} on an NVIDIA RTX 4070 SUPER, reducing pre-training epoch duration from 18 minutes (1,080 seconds) to \textbf{1 minute 18 seconds (78 seconds)}, representing a \textbf{13.85$\times$ speedup}.
+Standard PyTorch \texttt{DataLoader} pipelines suffer from CPU multiprocessing synchronization overhead when collating heterogeneous trajectory slices. We designed \texttt{FastEmbodimentBuffer} with pinned GPU host memory and vectorized slice indices. This increased GPU computing utilization from 7\% (32W) to \textbf{82\% (169W)} on an NVIDIA RTX 4070 SUPER, reducing pre-training epoch duration from 18 minutes (1,080 seconds) to \textbf{1 minute 18 seconds (78 seconds)}, representing a \textbf{13.85$\times$ speedup}.
 
 \section{Experiments and Results}
 \label{sec:experiments}
@@ -250,8 +250,8 @@ To evaluate architectural efficiency on single-task control, we instantiate a co
 \end{tabular}
 \end{table}
 
-\paragraph{Honest Performance and Robustness Analysis:}
-As detailed in Table~\ref{tab:baseline_comparison}, on standard noiseless trajectories, pure sequence baselines achieve higher returns (Decision RNN at 113.91 and Decision Transformer at 95.60 vs. HDML at 88.09) because discrete autoregression effectively overfits to clean expert rollouts. However, when deployed under physical disturbances (Gaussian sensor noise $\sigma=0.05$ and external force impulses $F=50\text{ N}$ applied every 50 steps), Decision Transformer and Decision RNN collapse precipitously by 98.8\% (from 95.60 to 1.17) and 93.7\% (from 113.91 to 7.14). In contrast, HDML preserves a robust IQM of \textbf{18.88} ($16\times$ higher than DT and $2.6\times$ higher than RNN), demonstrating that the continuous-time CfC ODE filter successfully dampens external torque shocks and prevents catastrophic policy collapse.
+\paragraph{Empirical Performance and Disturbance Robustness:}
+As detailed in Table~\ref{tab:baseline_comparison}, on standard noiseless trajectories, pure sequence baselines achieve higher returns (Decision RNN at 113.91 and Decision Transformer at 95.60 vs. HDML at 88.09) because discrete autoregression closely fits clean expert rollouts. However, when deployed under physical disturbances (Gaussian sensor noise $\sigma=0.05$ and external force impulses $F=50\text{ N}$ applied every 50 steps), Decision Transformer and Decision RNN exhibit substantial performance reductions of 98.8\% (from 95.60 to 1.17) and 93.7\% (from 113.91 to 7.14). In contrast, HDML preserves a robust IQM of \textbf{18.88} ($16\times$ higher than DT and $2.6\times$ higher than RNN), demonstrating that the continuous-time CfC ODE filter successfully dampens external torque shocks and prevents policy failure.
 
 \begin{figure}[h]
 \centering
@@ -292,8 +292,8 @@ PACE Safety Threshold $\tau_{\text{safe}}$ & 0.5 & Warmup Steps & 500 \\
 
 To isolate the individual contributions of HDML's architectural components, we evaluate two ablation variants:
 \begin{itemize}
-    \item \textbf{Variant A (Mamba + MLP Head):} Discarding the Liquid CfC head increases mechanical jerk from $0.7862$ to $0.9412$ and reduces perturbed reward by 44\%, confirming that continuous-time ODE integration is the key driver of physical robustness.
-    \item \textbf{Variant B (Transformer + Liquid Head):} Replacing the Mamba-3 backbone with a standard Causal Transformer preserves smoothness but degrades inference latency from $12.8\text{ ms}$ to $48.6\text{ ms}$ as context length increases to $T=100$.
+    \item \textbf{Variant A (Mamba + MLP Head):} Discarding the Liquid CfC head increases mechanical jerk from $0.7862$ to $0.9412$ and reduces perturbed reward by 44\%, confirming that continuous-time ODE integration serves as the primary mechanism for continuous disturbance attenuation.
+    \item \textbf{Variant B (Transformer + Liquid Head):} Replacing the Mamba-3 backbone with a standard Causal Transformer preserves smoothness but increases inference latency from $12.8\text{ ms}$ to $48.6\text{ ms}$ as context length increases to $T=100$.
 \end{itemize}
 
 \section{Limitations}
@@ -306,11 +306,11 @@ Foundation models for robotic control carry inherent physical risks if deployed 
 
 \section{Reproducibility Statement}
 \label{sec:reproducibility}
-To ensure complete reproducibility, the entire codebase, training pipelines, pre-trained foundation checkpoints (\texttt{hdml\_foundation\_best.pt}, 64MB), and evaluation logs are archived with permanent Digital Object Identifier (DOI) \href{https://doi.org/10.5281/zenodo.22020016}{\textbf{10.5281/zenodo.22020016}} and made publicly available under the Apache 2.0 License at:
+To facilitate open scientific verification and reproducibility, all source code, pre-training scripts, foundation checkpoints (\texttt{hdml\_foundation\_best.pt}, 64MB), and evaluation logs are permanently archived with Digital Object Identifier (DOI) \href{https://doi.org/10.5281/zenodo.22020016}{\textbf{10.5281/zenodo.22020016}} and made publicly accessible under the Apache 2.0 License at:
 \begin{center}
 \url{https://github.com/KienPC1234/HDML} \quad $\mid$ \quad \href{https://doi.org/10.5281/zenodo.22020016}{DOI: 10.5281/zenodo.22020016}
 \end{center}
-All experiments were executed on an NVIDIA GeForce RTX 4070 SUPER GPU (12GB VRAM) with CUDA 13.2 / Python 3.11.15. Commands to reproduce all tables are packaged in the unified CLI: \texttt{python scripts/hdml\_cli.py benchmark-foundation} and \texttt{python scripts/hdml\_cli.py benchmark-baselines}.
+All experiments were executed on an NVIDIA GeForce RTX 4070 SUPER GPU (12GB VRAM) with CUDA 13.2 / Python 3.11.15. Commands to reproduce all benchmark tables are packaged in the unified CLI: \texttt{python scripts/hdml\_cli.py benchmark-foundation} and \texttt{python scripts/hdml\_cli.py benchmark-baselines}.
 
 \bibliographystyle{unsrt}
 \bibliography{references}
