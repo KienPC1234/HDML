@@ -1,7 +1,5 @@
 # HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control
 
-**Ha Tri Kien** (`kienhtfhl31796@gmail.com`)  
-
 [![Preprint PDF](https://img.shields.io/badge/Preprint-PDF-red.svg)](paper/main.pdf)
 [![GitHub Release](https://img.shields.io/github/v/release/HDML?color=blue)](https://github.com/HDML/releases/tag/v1.0.0)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
