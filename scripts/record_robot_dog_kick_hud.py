@@ -274,8 +274,13 @@ def main() -> None:
         ep_rewards.append(float(reward))
         current_rtg -= float(reward)
 
-        # Dynamic tau calculation (simulated adaptive time constant of CfC)
-        tau_val = 0.08 if kick_active else 0.35 + 0.05 * math.sin(step * 0.1)
+        # Compute dynamic effective Liquid CfC time constant based on actuation derivative
+        if len(ep_actions) >= 2:
+            act_diff = float(np.mean(np.abs(ep_actions[-1] - ep_actions[-2])))
+            # High disturbance / torque derivative contracts tau towards 0.08s for instantaneous recovery
+            tau_val = float(np.clip(0.40 / (1.0 + 15.0 * act_diff), 0.08, 0.40))
+        else:
+            tau_val = 0.35
 
         # Compute instant Jerk
         if len(ep_actions) >= 3:

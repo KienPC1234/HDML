@@ -11,8 +11,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
+import numpy as np
 import torch
+
+# Ensure scripts directory is in sys.path for local module imports
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from hdml.utils.config import HDMLConfig, ModelConfig, TrainingConfig, EnvConfig
 from hdml.models import (
@@ -23,14 +30,15 @@ from hdml.models import (
     IQLBaseline,
     MLPBCBaseline,
 )
-from scripts.benchmark_baselines import evaluate_policy, load_baseline_checkpoint
+from benchmark_baselines import evaluate_policy, load_baseline_checkpoint
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 ENV_DIMS: dict[str, tuple[int, int]] = {
     "HalfCheetah-v5": (17, 6),
-    "Ant-v4": (105, 8),
+    "Ant-v4": (27, 8),
+    "Ant-v5": (105, 8),
     "Hopper-v5": (11, 3),
     "Walker2d-v5": (17, 6),
 }
