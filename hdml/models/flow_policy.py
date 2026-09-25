@@ -1,6 +1,6 @@
 """
-Generative Flow Matching Policy for Action Chunk Generation.
-Replaces the Gaussian Unimodal Policy with a multi-modal Optimal Transport Flow Matching process.
+Generative Q-Weighted Flow Matching Policy for Action Chunk Generation.
+Replaces the Gaussian Unimodal Policy with an Optimal Transport Flow Matching process.
 """
 from __future__ import annotations
 
