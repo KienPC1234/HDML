@@ -1,7 +1,6 @@
 # HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control
 
 [![Preprint PDF](https://img.shields.io/badge/Preprint-PDF-red.svg)](paper/main.pdf)
-[![GitHub Release](https://img.shields.io/github/v/release/HDML?color=blue)](https://github.com/HDML/releases/tag/v1.0.0)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11.15-blue.svg)](https://python.org)
 
@@ -66,7 +65,7 @@ Under physical perturbations (Gaussian sensor noise $\sigma=0.05$ and external f
 
 ```bash
 # Clone the repository
-git clone https://github.com/HDML.git
+git clone <repository-url>
 cd HDML
 
 # Create virtual environment
@@ -129,10 +128,10 @@ The complete scientific publication is available in [`paper/`](paper/):
 If you find this work useful in your research, please cite:
 
 ```bibtex
-@article{kien2026hdml,
+@article{hdml2026,
   title={HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control},
-  author={Kien, Ha Tri},
-  year={2026},
+  author={HDML Research Initiative},
+  year={2026}
 }
 ```
 

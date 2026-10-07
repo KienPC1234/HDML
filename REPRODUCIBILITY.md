@@ -14,7 +14,7 @@ This document provides a comprehensive, deterministic, and fully verifiable step
 ### 1.2. Environment Installation from Scratch
 ```bash
 # 1. Clone the repository
-git clone https://github.com/HDML.git
+git clone <repository-url>
 cd HDML
 
 # 2. Create and activate Python 3.11 virtual environment
