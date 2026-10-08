@@ -84,34 +84,12 @@ class HDMLDeploymentWrapper(nn.Module):
         super().__init__()
         # Clone model to CPU
         self.model = copy.deepcopy(model).to("cpu").eval()
-        # Deterministic flow solve for tracing/parity.
-        if hasattr(self.model, "deterministic"):
-            self.model.deterministic = True
 
-        # Replace the SSM kernels with pure-PyTorch portable versions so the graph
-        # is traceable by torch.onnx and runnable on CPU.
+        # Replace CUDA Mamba with portable PurePyTorchMamba
         if hasattr(self.model, "mamba_backbone"):
-            from hdml.models.mamba3_native import Mamba3NativeBlock
-            from hdml.models.mamba3_portable import PortableMamba3
             for block in self.model.mamba_backbone.layers:
                 if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
                     block.mamba = PurePyTorchMamba(block.mamba)
-                elif isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
-                    if isinstance(block.mamba, PortableMamba3):
-                        continue
-                    nat = block.mamba
-                    rope_fraction = getattr(block, "rope_fraction", 0.5)
-                    dev = next(nat.parameters()).device
-                    dt = next(nat.parameters()).dtype
-                    port = PortableMamba3(
-                        d_model=nat.d_model,
-                        d_state=nat.d_state,
-                        expand=nat.expand,
-                        headdim=nat.headdim,
-                        rope_fraction=rope_fraction,
-                    ).to(device=dev, dtype=dt)
-                    port.load_state_dict(nat.state_dict())
-                    block.mamba = port
 
     def forward(
         self,
@@ -133,13 +111,28 @@ class HDMLDeploymentWrapper(nn.Module):
             subgoal: (Batch, Subgoal_Dim)
             next_state: (Batch, Prop_Dim)
         """
-        subgoals, latent, values, next_states, _, executed = self.model.encode(
-            states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
-            action_last_only=True,
+        actions_pred, subgoals_pred, _, next_states_pred, _ = self.model(
+            states=states,
+            rtgs=rtgs,
+            actions=actions,
+            timesteps=timesteps,
         )
-        curr_action = executed[:, -1, :]
-        curr_subgoal = subgoals[:, -1, :]
-        curr_next_state = next_states[:, -1, :]
+
+        if actions_pred.ndim == 3:
+            curr_action = actions_pred[:, -1, :]
+        else:
+            curr_action = actions_pred
+
+        if subgoals_pred.ndim == 3:
+            curr_subgoal = subgoals_pred[:, -1, :]
+        else:
+            curr_subgoal = subgoals_pred
+
+        if next_states_pred.ndim == 3:
+            curr_next_state = next_states_pred[:, -1, :]
+        else:
+            curr_next_state = next_states_pred
+
         return curr_action, curr_subgoal, curr_next_state
 
 

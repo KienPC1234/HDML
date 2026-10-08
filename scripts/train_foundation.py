@@ -59,7 +59,6 @@ def train_foundation(config_path: str) -> None:
         max_timesteps=cfg["model"]["max_timesteps"],
         max_embodiments=cfg["model"]["max_embodiments"],
         dropout=cfg["model"]["dropout"],
-        use_native_mamba3=cfg["model"].get("use_native_mamba3", True),
         device=device,
     )
 

@@ -13,14 +13,7 @@ model:
   cfc_residual: 0.05
   use_visual: false
   dropout: 0.1
-  action_policy: flow
-  chunk_size: 5
-  use_native_mamba3: true
-  mamba3_headdim: 64
-  mamba3_ngroups: 1
-  mamba3_rope_fraction: 0.5
-  mamba3_outproj_norm: false
-  mamba3_chunk: 64
+  action_policy: gaussian
   device: cuda
 training:
   learning_rate: 0.0003
@@ -31,15 +24,14 @@ training:
   context_length: 20
   gamma: 0.99
   grad_clip_norm: 1.0
-  eval_interval: 5
-  save_interval: 5
+  eval_interval: 1
+  save_interval: 1
   seed: 42
   use_amp: true
   amp_dtype: bfloat16
   num_workers: 0
-  pin_memory: true
+  pin_memory: false
   persistent_workers: false
-  prefetch_factor: 2
   use_fast_dataset: true
   use_tensorboard: true
   use_wandb: false
