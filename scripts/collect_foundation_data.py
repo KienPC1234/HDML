@@ -1,7 +1,7 @@
-"""Collect high-quality expert trajectory data from diverse MuJoCo environments.
+"""Collect reward-filtered random-policy trajectory data from diverse MuJoCo environments.
 
 Generates offline RL datasets for HDML-Foundation pre-training using
-random exploration with reward filtering to retain only high-quality trajectories.
+random exploration with reward filtering to retain relatively higher-return random-policy trajectories; these are not expert demonstrations.
 """
 
 from __future__ import annotations
@@ -84,11 +84,13 @@ def collect_env_data(
 
     for ep in range(num_episodes):
         obs, info = env.reset(seed=seed + ep)
+        env.action_space.seed(seed + ep)
         traj: dict[str, list] = {
             "observations": [],
             "actions": [],
             "rewards": [],
             "terminals": [],
+            "truncations": [],
         }
         ep_return = 0.0
 
@@ -100,6 +102,7 @@ def collect_env_data(
             obs, reward, terminated, truncated, info = env.step(action)
             traj["rewards"].append(float(reward))
             traj["terminals"].append(terminated)
+            traj["truncations"].append(truncated or step == max_steps - 1)
             ep_return += float(reward)
 
             if terminated or truncated:
@@ -124,6 +127,7 @@ def collect_env_data(
         archive[f"traj_{i}_actions"] = np.array(traj["actions"], dtype=np.float32)
         archive[f"traj_{i}_rewards"] = np.array(traj["rewards"], dtype=np.float32)
         archive[f"traj_{i}_terminals"] = np.array(traj["terminals"], dtype=bool)
+        archive[f"traj_{i}_truncations"] = np.array(traj["truncations"], dtype=bool)
         total_steps += traj["length"]
 
     returns = [t["total_return"] for t in kept]
@@ -174,3 +178,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

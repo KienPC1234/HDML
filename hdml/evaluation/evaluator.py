@@ -58,12 +58,14 @@ class HDMLEvaluator:
             sensor_noise: Optional sensor noise generator.
             force_perturb: Optional force impulse generator.
             max_steps: Maximum allowable episode steps.
-            macro_interval: Number of micro-steps per Mamba macro-planning invocation (1 = synchronous).
+            macro_interval: Number of micro-steps per Mamba macro-planning invocation (1 = synchronous, >1 = two-tier hierarchical control).
             pace_controller: Optional Phase-Aware Chunk Execution controller to monitor state deviation.
 
         Returns:
             Dictionary containing episodic return, length, actions, and metrics.
         """
+        if macro_interval < 1:
+            raise ValueError("macro_interval must be >= 1")
         obs, _ = env.reset(seed=seed)
         obs_dim = env.observation_space.shape[0]  # type: ignore
         act_dim = env.action_space.shape[0]        # type: ignore
@@ -84,6 +86,7 @@ class HDMLEvaluator:
         target_rtg = self.target_return
         cfc_hx = None
         current_subgoal: torch.Tensor | None = None
+        current_latent: torch.Tensor | None = None
         if pace_controller is not None:
             pace_controller.reset()
 
@@ -126,9 +129,10 @@ class HDMLEvaluator:
                         rtgs=t_rtgs,
                         actions=t_actions,
                         timesteps=t_timesteps,
-                        hx=cfc_hx,
+                        hx=None,
                     )
                     current_subgoal = info["subgoal"]
+                    current_latent = info.get("latent")
                     if pace_controller is not None and macro_interval > 1:
                         # Feed action / predicted states to PACE for chunk deviation tracking
                         pace_controller.set_new_plan(
@@ -136,14 +140,15 @@ class HDMLEvaluator:
                             predicted_states=None,
                         )
             else:
-                # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal
+                # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal and latent
                 t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
                 with torch.inference_mode():
                     action_tensor, cfc_hx = self.model.act_from_subgoal(
                         subgoal=current_subgoal,
                         current_prop=t_prop_current,
                         rtg=t_rtg_current,
-                        hx=cfc_hx,
+                        hx=None,
+                        latent=current_latent,
                     )
 
             if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
@@ -257,3 +262,4 @@ class HDMLEvaluator:
             f"| Length = {results['mean_length']:.1f} | Smoothness (Jerk) = {results['mean_smoothness']:.4f}"
         )
         return results
+

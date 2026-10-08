@@ -27,7 +27,7 @@ class SensorNoisePerturbation:
 
 
 class ForceImpulsePerturbation:
-    """Applies sudden random physical impulse force perturbations during simulation."""
+    """Adds random bounded noise to action commands. Legacy class name; not an external force in newtons."""
 
     def __init__(
         self,
@@ -40,9 +40,10 @@ class ForceImpulsePerturbation:
         self.rng = np.random.default_rng(seed)
 
     def apply_action_perturbation(self, action: np.ndarray) -> np.ndarray:
-        """Simulate external force perturbation on joint actuation."""
+        """Perturb normalized action commands; magnitude has no assigned force unit."""
         if self.rng.uniform() < self.impulse_prob:
             impulse = self.rng.uniform(-self.force_magnitude, self.force_magnitude, size=action.shape)
             perturbed_act = np.clip(action + impulse, -1.0, 1.0).astype(np.float32)
             return perturbed_act
         return action
+

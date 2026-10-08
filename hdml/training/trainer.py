@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import time
 from pathlib import Path
 from typing import Any
+import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from hdml.models.hdml_model import HDMLModel
-from hdml.training.losses import HDMLLoss
 from hdml.utils.config import TrainingConfig
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ class HDMLTrainer:
       - Linear Warmup + Cosine Annealing learning rate schedule
       - Gradient clipping and NaN/Inf safeguards
       - Model checkpointing and loss logging
-      - Flow Matching and PAVE computation for HDML
+      - Direct action imitation and auxiliary state/value losses
     """
 
     def __init__(
@@ -39,6 +41,24 @@ class HDMLTrainer:
     ) -> None:
         self.config = config if config is not None else TrainingConfig()
         self.device = torch.device(device)
+        # Deterministic seeding: torch/cuda/numpy/python. DataLoader shuffling
+        # uses an explicit generator below so runs are reproducible.
+        _seed = int(self.config.seed)
+        random.seed(_seed)
+        np.random.seed(_seed)
+        torch.manual_seed(_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(_seed)
+        # GPU throughput knobs that do not change numerics: TF32 + high-precision
+        # matmul + cudnn autotune for fixed input shapes.
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            try:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.backends.cudnn.benchmark = True
+                torch.set_float32_matmul_precision("high")
+            except Exception as e:  # noqa: BLE001 - backend flags must not crash training
+                logger.warning(f"Could not enable TF32/high-precision matmul: {e}")
         self.model = model.to(self.device)
 
         self.train_dataset = train_dataset
@@ -51,6 +71,8 @@ class HDMLTrainer:
         pin_memory = self.config.pin_memory if use_cuda else False
         persistent_workers = (num_workers > 0) and self.config.persistent_workers
         prefetch_factor = self.config.prefetch_factor if num_workers > 0 else None
+        # Seeded generator for reproducible shuffling.
+        self._loader_gen = torch.Generator().manual_seed(_seed)
 
         self.train_loader = DataLoader(
             self.train_dataset,
@@ -60,6 +82,7 @@ class HDMLTrainer:
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
             prefetch_factor=prefetch_factor,
+            generator=self._loader_gen,
         )
 
         if self.val_dataset is not None:
@@ -77,9 +100,9 @@ class HDMLTrainer:
         else:
             self.val_loader = None
 
-        # Optimizer
+        # Optimizer. The action flow policy and the HiQC chunk critic are trained.
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            (p for p in self.model.parameters() if p.requires_grad),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
         )
@@ -92,18 +115,6 @@ class HDMLTrainer:
         else:
             self.amp_dtype = torch.float16
             self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
-
-        # Loss Function for HDML
-        self.criterion = HDMLLoss(
-            flow_weight=self.config.flow_weight,
-            q_weight=self.config.q_weight,
-            value_weight=self.config.value_weight,
-            pave_weight=self.config.pave_weight,
-            grad_caps_weight=self.config.grad_caps_weight,
-            dynamics_weight=self.config.dynamics_weight,
-            use_advantage_weighting=self.config.use_advantage_weighting,
-            advantage_temperature=self.config.advantage_temperature,
-        )
 
         # Learning Rate Schedule
         total_steps = max(1, len(self.train_loader) * self.config.max_epochs)
@@ -161,14 +172,24 @@ class HDMLTrainer:
         return lr
 
     def _compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
-        """Compute sequence-level composite loss for HDML training and evaluation.
+        """Compute the composite HDML loss for training and evaluation.
+
+        Implements the report's objective:
+          1. Flow-Matching velocity loss over the action chunk (generative policy).
+          2. HiQC chunk critic loss (k-step Bellman/expectile target).
+          3. Value loss (IQL expectile regression toward the critic lower bound).
+          4. PAVE regularisation of the state-action value Hessian (Hutchinson).
+          5. Grad-CAPS second-order action-smoothness penalty.
+          6. Forward-dynamics prediction loss.
+        All weights come from the training config.
 
         Args:
-            batch: Dictionary containing states, actions, rtgs, timesteps, mask,
-                   target_actions, target_rtgs, and next_states.
+            batch: dict with states, actions, rtgs, timesteps, mask,
+                   target_actions, target_chunks, target_rtgs, reward_chunks,
+                   next_states.
 
         Returns:
-            Tuple of (scalar loss tensor, dictionary of float loss components).
+            Tuple of (scalar loss tensor, dict of float loss components).
         """
         states = batch["states"].to(self.device, non_blocking=True)
         actions = batch["actions"].to(self.device, non_blocking=True)
@@ -179,61 +200,158 @@ class HDMLTrainer:
         target_actions = batch["target_actions"].to(self.device, non_blocking=True)
         target_rtgs = batch["target_rtgs"].to(self.device, non_blocking=True)
         next_states = batch["next_states"].to(self.device, non_blocking=True)
+        target_chunks = batch["target_chunks"].to(self.device, non_blocking=True)
+        reward_chunks = batch["reward_chunks"].to(self.device, non_blocking=True)
+        # RTG at t+c for the k-step target. Older checkpoints/datasets may lack
+        # this field; fall back to RTG[t] only to avoid a crash (biased target,
+        # logged once). New datasets must provide "target_next_rtgs".
+        if "target_next_rtgs" in batch:
+            target_next_rtgs = batch["target_next_rtgs"].to(self.device, non_blocking=True)
+        else:
+            if self.current_step == 0:
+                logger.warning("Batch lacks 'target_next_rtgs'; Q-target falls back to RTG[t] (biased). Regenerate dataset.")
+            target_next_rtgs = target_rtgs
 
         valid_tokens = torch.clamp(mask.sum(), min=1.0)
         mask_exp_act = mask.unsqueeze(-1)
         mask_exp_state = mask.unsqueeze(-1)
 
-        actions_pred, subgoals_pred, values_pred, next_states_pred, _ = self.model(
-            states=states,
-            rtgs=rtgs,
-            actions=actions,
-            timesteps=timesteps,
+        # Backbone features and the nominal action-chunk policy.
+        subgoals_pred, latent_features, values_pred, next_states_pred, flow_context, actions_pred = self.model.encode(
+            states=states, rtgs=rtgs, actions=actions, timesteps=timesteps
         )
 
-        # 1. Action imitation loss (Smooth L1)
+        # 0. Action imitation loss on the executed action (first chunk step, CfC-refined).
         raw_act = F.smooth_l1_loss(actions_pred, target_actions, reduction="none")
         action_loss = (raw_act * mask_exp_act).sum() / (valid_tokens * actions_pred.shape[-1])
 
-        # 2. Future state subgoal representation loss (eliminates latent collapse)
+        # 1. Flow-Matching loss over the action chunk (B, T, chunk, action_dim).
+        target_velocity, pred_velocity, noise = self.model.flow_policy.forward_train(
+            target_chunks, flow_context
+        )
+        flow_elem = target_velocity.shape[-1] * target_velocity.shape[-2]
+        raw_flow = F.mse_loss(pred_velocity, target_velocity, reduction="none")
+        flow_loss = (raw_flow * mask.unsqueeze(-1).unsqueeze(-1)).sum() / (
+            valid_tokens * flow_elem
+        )
+        # Predicted action chunk (deterministic reconstruction) for Grad-CAPS.
+        pred_chunk = pred_velocity if noise is None else pred_velocity + noise
+
+        # 2. HiQC chunk critic loss toward the discounted c-step reward + RTG[t+c].
+        #    Correct k-step identity: RTG[t] = R_c[t] + gamma^c * RTG[t+c], so the
+        #    target must bootstrap from the future return, not the current one.
+        critic_context = torch.cat([subgoals_pred.detach(), states], dim=-1)
+        q1_pred, q2_pred = self.model.hiqc_critic(critic_context, target_chunks)
+        q_target = reward_chunks + (self.config.gamma ** self.model.chunk_size) * target_next_rtgs
+        q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_exp_act
+        q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_exp_act
+        q_loss = (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_exp_act.sum() * 2, min=1.0)
+        q_chunk_value = torch.minimum(q1_pred, q2_pred)
+
+        # 3. Value loss: expectile regression toward the conservative chunk value.
+        raw_val = self._expectile_loss(q_chunk_value.detach() - values_pred, tau=0.7)
+        value_loss = (raw_val * mask_exp_act).sum() / torch.clamp(mask_exp_act.sum(), min=1.0)
+
+        # 4. PAVE regularisation (Hutchinson trace of the mixed Hessian).
+        #    Double backward is expensive; compute it every ``pave_interval`` steps.
+        if (
+            self.config.pave_weight > 0.0
+            and torch.is_grad_enabled()
+            and self.config.pave_interval > 0
+            and (self.current_step % self.config.pave_interval == 0)
+        ):
+            pave_loss = self._pave_loss(
+                self.model.hiqc_critic, critic_context, target_chunks, mask
+            )
+        else:
+            pave_loss = states.new_zeros(())
+
+        # 5. Grad-CAPS second-order action smoothness *within* the predicted chunk.
+        #    pred_chunk is (B, T, c, D); differentiate along the chunk axis c
+        #    (dim=-2), not the context-time axis. Mask weights per context step.
+        if self.config.grad_caps_weight > 0.0 and pred_chunk.shape[-2] > 2:
+            accel = pred_chunk[:, :, 2:, :] - 2 * pred_chunk[:, :, 1:-1, :] + pred_chunk[:, :, :-2, :]
+            accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T)
+            grad_caps_loss = (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
+        else:
+            grad_caps_loss = states.new_zeros(())
+
+        # 6. Forward-dynamics prediction loss.
+        raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
+        dynamics_loss = (raw_dyn * mask_exp_state).sum() / (
+            valid_tokens * next_states_pred.shape[-1]
+        )
+
+        # 7. Subgoal representation loss against future states (when dims match).
         if subgoals_pred.shape[-1] == next_states.shape[-1]:
             raw_subgoal = F.smooth_l1_loss(subgoals_pred, next_states, reduction="none")
-            subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (valid_tokens * subgoals_pred.shape[-1])
+            subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (
+                valid_tokens * subgoals_pred.shape[-1]
+            )
         else:
-            subgoal_loss = (subgoals_pred**2).sum() / (valid_tokens * subgoals_pred.shape[-1])
+            subgoal_loss = states.new_zeros(())
 
-        # 3. Value loss
-        raw_val = F.mse_loss(values_pred, target_rtgs, reduction="none")
-        value_loss = (raw_val * mask_exp_act).sum() / valid_tokens
-
-        # 4. Dynamics loss
-        raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
-        dynamics_loss = (raw_dyn * mask_exp_state).sum() / (valid_tokens * next_states_pred.shape[-1])
-
-        # 5. Grad-CAPS Smoothness loss (penalty on consecutive action changes)
-        if actions_pred.shape[1] > 1:
-            diff = actions_pred[:, 1:, :] - actions_pred[:, :-1, :]
-            mask_diff = mask[:, 1:].unsqueeze(-1)
-            grad_caps_loss = ((diff ** 2) * mask_diff).sum() / (torch.clamp(mask_diff.sum(), min=1.0) * actions_pred.shape[-1])
-        else:
-            grad_caps_loss = torch.tensor(0.0, device=self.device)
-
+        # NOTE: TrainingConfig carries both `value_weight` and legacy
+        # `reg_loss_weight`. Effective coefficient is `reg_loss_weight` to preserve
+        # current training dynamics; a mismatch with `value_weight` is warned once.
+        _v_w = float(getattr(self.config, "value_weight", 1.0))
+        _r_w = float(self.config.reg_loss_weight)
+        if self.current_step == 0 and abs(_v_w - 1.0) > 1e-12 and abs(_v_w - _r_w) > 1e-12:
+            logger.warning(
+                f"value_weight={_v_w} differs from effective reg_loss_weight={_r_w}; "
+                "using reg_loss_weight. Set them equal to silence this."
+            )
         loss = (
-            action_loss
+            self.config.action_weight * action_loss
+            + self.config.flow_weight * flow_loss
+            + self.config.q_weight * q_loss
             + self.config.reg_loss_weight * value_loss
-            + self.config.subgoal_loss_weight * subgoal_loss
-            + self.config.dynamics_weight * dynamics_loss
+            + self.config.pave_weight * pave_loss
             + self.config.grad_caps_weight * grad_caps_loss
+            + self.config.dynamics_weight * dynamics_loss
+            + self.config.subgoal_loss_weight * subgoal_loss
         )
         loss_dict = {
-            "total_loss": float(loss.item()),
-            "action_loss": float(action_loss.item()),
-            "value_loss": float(value_loss.item()),
-            "subgoal_loss": float(subgoal_loss.item()),
-            "dynamics_loss": float(dynamics_loss.item()),
-            "grad_caps_loss": float(grad_caps_loss.item()),
+            "total_loss": loss.detach(),
+            "action_loss": action_loss.detach(),
+            "flow_loss": flow_loss.detach(),
+            "q_loss": q_loss.detach(),
+            "value_loss": value_loss.detach(),
+            "pave_loss": pave_loss.detach(),
+            "grad_caps_loss": grad_caps_loss.detach(),
+            "dynamics_loss": dynamics_loss.detach(),
+            "subgoal_loss": subgoal_loss.detach(),
         }
         return loss, loss_dict
+
+    @staticmethod
+    def _expectile_loss(diff: torch.Tensor, tau: float) -> torch.Tensor:
+        """Asymmetric expectile squared loss L2^tau(x) = |tau - 1[x<0]| x^2."""
+        weight = torch.where(diff > 0, tau, 1.0 - tau)
+        return weight * (diff ** 2)
+
+    def _pave_loss(
+        self,
+        critic: nn.Module,
+        state_repr: torch.Tensor,
+        action_chunk: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """PAVE: Hutchinson estimate of ||grad_s (grad_a Q^T v)||^2."""
+        s = state_repr.detach().requires_grad_(True)
+        a = action_chunk.detach().requires_grad_(True)
+        q1, _ = critic(s, a)
+        q = q1.squeeze(-1)
+        q_sum = (q * mask).sum()
+        grad_a = torch.autograd.grad(
+            q_sum, a, create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+        v = torch.randn_like(a)
+        grad_s = torch.autograd.grad(
+            (grad_a * v).sum(), s, create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+        penalty = (grad_s ** 2).sum(dim=-1)
+        return (penalty * mask).sum() / torch.clamp(mask.sum(), min=1.0)
 
     def train_epoch(self, epoch: int) -> dict[str, float]:
         """Train the model for one epoch.
@@ -287,13 +405,16 @@ class HDMLTrainer:
             total_samples += batch["states"].shape[0]
 
             for k, v in loss_dict.items():
-                epoch_losses[k] = epoch_losses.get(k, 0.0) + v
+                # loss_dict holds detached GPU tensors; accumulate without host sync.
+                epoch_losses[k] = epoch_losses.get(k, torch.zeros((), device=self.device)) + v
 
-            batch_bar.set_postfix(
-                loss=f"{loss_dict['total_loss']:.3f}",
-                act=f"{loss_dict['action_loss']:.3f}",
-                lr=f"{lr:.1e}",
-            )
+            # Throttle host-syncing postfix updates: .item() forces a CUDA sync.
+            if (self.current_step % 10 == 0) or (self.current_step < 5):
+                batch_bar.set_postfix(
+                    loss=f"{loss_dict['total_loss'].item():.3f}",
+                    act=f"{loss_dict['action_loss'].item():.3f}",
+                    lr=f"{lr:.1e}",
+                )
 
         t1 = time.perf_counter()
         throughput = float(total_samples / max(1e-5, (t1 - t0)))
@@ -301,12 +422,12 @@ class HDMLTrainer:
 
         metrics = {
             "epoch": epoch,
-            "train_loss": epoch_losses.get("total_loss", 0.0) / num_batches,
-            "train_action_loss": epoch_losses.get("action_loss", 0.0) / num_batches,
-            "train_value_loss": epoch_losses.get("value_loss", 0.0) / num_batches,
-            "train_subgoal_loss": epoch_losses.get("subgoal_loss", 0.0) / num_batches,
-            "train_dynamics_loss": epoch_losses.get("dynamics_loss", 0.0) / num_batches,
-            "train_grad_caps_loss": epoch_losses.get("grad_caps_loss", 0.0) / num_batches,
+            "train_loss": float(epoch_losses.get("total_loss", torch.zeros(())) / num_batches),
+            "train_action_loss": float(epoch_losses.get("action_loss", torch.zeros(())) / num_batches),
+            "train_value_loss": float(epoch_losses.get("value_loss", torch.zeros(())) / num_batches),
+            "train_subgoal_loss": float(epoch_losses.get("subgoal_loss", torch.zeros(())) / num_batches),
+            "train_dynamics_loss": float(epoch_losses.get("dynamics_loss", torch.zeros(())) / num_batches),
+            "train_grad_caps_loss": float(epoch_losses.get("grad_caps_loss", torch.zeros(())) / num_batches),
             "throughput_fps": throughput,
         }
 
@@ -341,15 +462,15 @@ class HDMLTrainer:
                 _, loss_dict = self._compute_loss(batch)
 
             for k, v in loss_dict.items():
-                val_losses[k] = val_losses.get(k, 0.0) + v
+                val_losses[k] = val_losses.get(k, torch.zeros((), device=self.device)) + v
 
         num_val_batches = max(1, len(self.val_loader))
         val_metrics = {
-            "val_loss": val_losses.get("total_loss", 0.0) / num_val_batches,
-            "val_action_loss": val_losses.get("action_loss", 0.0) / num_val_batches,
-            "val_value_loss": val_losses.get("value_loss", 0.0) / num_val_batches,
-            "val_subgoal_loss": val_losses.get("subgoal_loss", 0.0) / num_val_batches,
-            "val_dynamics_loss": val_losses.get("dynamics_loss", 0.0) / num_val_batches,
+            "val_loss": float(val_losses.get("total_loss", torch.zeros(())) / num_val_batches),
+            "val_action_loss": float(val_losses.get("action_loss", torch.zeros(())) / num_val_batches),
+            "val_value_loss": float(val_losses.get("value_loss", torch.zeros(())) / num_val_batches),
+            "val_subgoal_loss": float(val_losses.get("subgoal_loss", torch.zeros(())) / num_val_batches),
+            "val_dynamics_loss": float(val_losses.get("dynamics_loss", torch.zeros(())) / num_val_batches),
         }
 
         if self.writer is not None:
@@ -396,7 +517,12 @@ class HDMLTrainer:
         )
         for epoch in epoch_bar:
             train_metrics = self.train_epoch(epoch)
-            val_metrics = self.evaluate()
+            # Respect eval_interval: validation every epoch is 2x work for no gain.
+            # val_metrics={} on skipped epochs keeps best-tracking on train loss.
+            if self.val_loader is not None and (epoch % max(1, self.config.eval_interval) == 0 or epoch == self.config.max_epochs):
+                val_metrics = self.evaluate()
+            else:
+                val_metrics = {}
 
             combined = {**train_metrics, **val_metrics}
             history.append(combined)
@@ -436,3 +562,4 @@ class HDMLTrainer:
 
         logger.info("Training complete.")
         return history
+

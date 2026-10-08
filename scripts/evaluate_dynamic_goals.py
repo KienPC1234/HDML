@@ -71,7 +71,7 @@ def evaluate_dynamic_goals():
                     rtgs=t_rtgs,
                     actions=t_actions,
                     timesteps=t_timesteps,
-                    hx=hx,
+                    hx=None,
                 )
 
             act = act_tensor[0].cpu().numpy().astype(np.float32)
@@ -104,3 +104,4 @@ def evaluate_dynamic_goals():
 
 if __name__ == "__main__":
     evaluate_dynamic_goals()
+

@@ -84,12 +84,34 @@ class HDMLDeploymentWrapper(nn.Module):
         super().__init__()
         # Clone model to CPU
         self.model = copy.deepcopy(model).to("cpu").eval()
+        # Deterministic flow solve for tracing/parity.
+        if hasattr(self.model, "deterministic"):
+            self.model.deterministic = True
 
-        # Replace CUDA Mamba with portable PurePyTorchMamba
+        # Replace the SSM kernels with pure-PyTorch portable versions so the graph
+        # is traceable by torch.onnx and runnable on CPU.
         if hasattr(self.model, "mamba_backbone"):
+            from hdml.models.mamba3_native import Mamba3NativeBlock
+            from hdml.models.mamba3_portable import PortableMamba3
             for block in self.model.mamba_backbone.layers:
                 if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
                     block.mamba = PurePyTorchMamba(block.mamba)
+                elif isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
+                    if isinstance(block.mamba, PortableMamba3):
+                        continue
+                    nat = block.mamba
+                    rope_fraction = getattr(block, "rope_fraction", 0.5)
+                    dev = next(nat.parameters()).device
+                    dt = next(nat.parameters()).dtype
+                    port = PortableMamba3(
+                        d_model=nat.d_model,
+                        d_state=nat.d_state,
+                        expand=nat.expand,
+                        headdim=nat.headdim,
+                        rope_fraction=rope_fraction,
+                    ).to(device=dev, dtype=dt)
+                    port.load_state_dict(nat.state_dict())
+                    block.mamba = port
 
     def forward(
         self,
@@ -111,28 +133,13 @@ class HDMLDeploymentWrapper(nn.Module):
             subgoal: (Batch, Subgoal_Dim)
             next_state: (Batch, Prop_Dim)
         """
-        actions_pred, subgoals_pred, _, next_states_pred, _ = self.model(
-            states=states,
-            rtgs=rtgs,
-            actions=actions,
-            timesteps=timesteps,
+        subgoals, latent, values, next_states, _, executed = self.model.encode(
+            states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
+            action_last_only=True,
         )
-
-        if actions_pred.ndim == 3:
-            curr_action = actions_pred[:, -1, :]
-        else:
-            curr_action = actions_pred
-
-        if subgoals_pred.ndim == 3:
-            curr_subgoal = subgoals_pred[:, -1, :]
-        else:
-            curr_subgoal = subgoals_pred
-
-        if next_states_pred.ndim == 3:
-            curr_next_state = next_states_pred[:, -1, :]
-        else:
-            curr_next_state = next_states_pred
-
+        curr_action = executed[:, -1, :]
+        curr_subgoal = subgoals[:, -1, :]
+        curr_next_state = next_states[:, -1, :]
         return curr_action, curr_subgoal, curr_next_state
 
 
@@ -145,7 +152,7 @@ def export_hdml_to_onnx(
     opset_version: int = 17,
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Export an HDML model to ONNX format with dynamic batch and sequence dimensions."""
+    """Export an HDML model to ONNX format with dynamic batch size and a fixed context length."""
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,10 +168,10 @@ def export_hdml_to_onnx(
     output_names = ["action", "subgoal", "next_state"]
 
     dynamic_axes = {
-        "states": {0: "batch_size", 1: "sequence_length"},
-        "rtgs": {0: "batch_size", 1: "sequence_length"},
-        "actions": {0: "batch_size", 1: "sequence_length"},
-        "timesteps": {0: "batch_size", 1: "sequence_length"},
+        "states": {0: "batch_size"},
+        "rtgs": {0: "batch_size"},
+        "actions": {0: "batch_size"},
+        "timesteps": {0: "batch_size"},
         "action": {0: "batch_size"},
         "subgoal": {0: "batch_size"},
         "next_state": {0: "batch_size"},
@@ -224,5 +231,8 @@ def export_hdml_to_onnx(
         "onnx_path": str(out_file),
         "file_size_mb": file_size_mb,
         "max_numerical_diff": max_diff,
-        "verified": True,
+        "verified": bool(verify),
+        "context_length": context_length,
+        "parity_scope": "portable PyTorch vs ONNX; CUDA vs portable parity requires a separate test",
     }
+

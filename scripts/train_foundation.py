@@ -59,6 +59,7 @@ def train_foundation(config_path: str) -> None:
         max_timesteps=cfg["model"]["max_timesteps"],
         max_embodiments=cfg["model"]["max_embodiments"],
         dropout=cfg["model"]["dropout"],
+        use_native_mamba3=cfg["model"].get("use_native_mamba3", True),
         device=device,
     )
 
@@ -74,19 +75,29 @@ def train_foundation(config_path: str) -> None:
             embodiment_paths[name] = spec["path"]
             logger.info(f"Registered embodiment '{name}': {spec['prop_dim']}D state -> {spec['action_dim']}D action (Dataset: {spec['path']})")
         else:
-            logger.warning(f"Dataset for embodiment '{name}' not found at {spec['path']}, skipping.")
+            raise FileNotFoundError(f"Missing required embodiment dataset: {spec['path']}")
 
     if len(embodiment_paths) == 0:
-        logger.error("No valid embodiment datasets found. Please check paths in config.")
-        return
+        raise ValueError("No embodiment datasets configured")
 
     # 3. Initialize High-Performance FastMultiEmbodimentManager
     manager = FastMultiEmbodimentManager(
         embodiment_paths=embodiment_paths,
         context_length=cfg["training"]["context_length"],
-        gamma=cfg["training"]["gamma"],
+        gamma=cfg["training"]["gamma"], split="train", split_seed=cfg["training"]["seed"],
     )
     logger.info(f"FastMultiEmbodimentManager initialized with {manager.total_steps:,} total multi-robot steps.")
+
+    validation_manager = FastMultiEmbodimentManager(
+        embodiment_paths, context_length=cfg["training"]["context_length"],
+        gamma=cfg["training"]["gamma"], split="validation", split_seed=cfg["training"]["seed"])
+    data_manifest = {
+        name: {"train_episode_hashes": manager.buffers[name].episode_hashes,
+               "validation_episode_hashes": validation_manager.buffers[name].episode_hashes,
+               "state_mean": manager.buffers[name].state_mean.tolist(),
+               "state_std": manager.buffers[name].state_std.tolist()}
+        for name in manager.embodiment_names}
+    embodiment_indices = {name: manager.buffers[name].embodiment_idx for name in manager.embodiment_names}
 
     # 4. Optimizer & Scaler
     optimizer = torch.optim.AdamW(
@@ -94,7 +105,7 @@ def train_foundation(config_path: str) -> None:
         lr=cfg["training"]["learning_rate"],
         weight_decay=cfg["training"]["weight_decay"],
     )
-    scaler = torch.amp.GradScaler("cuda", enabled=cfg["training"]["use_amp"])
+    scaler = torch.amp.GradScaler("cuda", enabled=False)  # bfloat16 does not need scaling
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"HDML-Foundation Model initialized with {total_params:,} trainable parameters on {device}.")
@@ -110,6 +121,7 @@ def train_foundation(config_path: str) -> None:
     active_embodiment_names = list(embodiment_paths.keys())
     logger.info(f"Starting High-Speed Foundation Pre-training ({max_epochs} epochs, batch_size={batch_size}, steps_per_epoch={steps_per_epoch})...")
 
+    best_validation_loss = float("inf")
     for epoch in range(1, max_epochs + 1):
         model.train()
         epoch_losses: list[float] = []
@@ -128,7 +140,7 @@ def train_foundation(config_path: str) -> None:
 
             optimizer.zero_grad(set_to_none=True)
 
-            with torch.amp.autocast("cuda", enabled=cfg["training"]["use_amp"], dtype=torch.bfloat16):
+            with torch.amp.autocast("cuda", enabled=cfg["training"]["use_amp"] and device.type == "cuda", dtype=torch.bfloat16):
                 acts_pred, intents_pred, values_pred, rtg_pred, _ = model(
                     states=states,
                     rtgs=rtgs,
@@ -148,9 +160,11 @@ def train_foundation(config_path: str) -> None:
                     + cfg["training"]["intent_weight"] * l_intent
                 )
 
+            if not torch.isfinite(loss):
+                raise FloatingPointError("Nonfinite foundation training loss")
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["grad_clip_norm"])
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["grad_clip_norm"], error_if_nonfinite=True)
             scaler.step(optimizer)
             scaler.update()
 
@@ -159,29 +173,31 @@ def train_foundation(config_path: str) -> None:
         mean_loss = float(np.mean(epoch_losses)) if epoch_losses else 0.0
         logger.info(f"Epoch {epoch:02d}/{max_epochs:02d} | Foundation Multi-Embodiment Loss: {mean_loss:.5f}")
 
+        model.eval()
+        validation_losses = []
+        with torch.inference_mode():
+            for name in manager.embodiment_names:
+                generator = torch.Generator().manual_seed(cfg["training"]["seed"] + 10000)
+                for _ in range(10):
+                    batch = validation_manager.buffers[name].sample_batch(batch_size, device, generator)
+                    pred, _, _, _, _ = model(batch["states"], batch["rtgs"], batch["actions_in"],
+                                             batch["timesteps"], name, batch["embodiment_idx"])
+                    validation_losses.append(nn.functional.smooth_l1_loss(pred, batch["actions_target"]).item())
+        validation_loss = float(np.mean(validation_losses))
+        if not np.isfinite(validation_loss):
+            raise FloatingPointError("Nonfinite foundation validation loss")
+        logger.info(f"Epoch {epoch}: held-out prediction loss={validation_loss:.6f}")
+        checkpoint = {"epoch": epoch, "model_state_dict": model.state_dict(),
+                      "optimizer_state_dict": optimizer.state_dict(), "config": cfg,
+                      "train_loss": mean_loss, "validation_loss": validation_loss,
+                      "data_manifest": data_manifest, "embodiment_indices": embodiment_indices,
+                      "protocol_version": 2}
+        if validation_loss < best_validation_loss:
+            best_validation_loss = validation_loss
+            torch.save(checkpoint, output_dir / "hdml_foundation_best.pt")
         if epoch % cfg["training"]["save_interval"] == 0 or epoch == max_epochs:
-            ckpt_path = output_dir / f"hdml_foundation_epoch_{epoch:02d}.pt"
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": mean_loss,
-                    "config": cfg,
-                },
-                ckpt_path,
-            )
-            logger.info(f"  --> Saved foundation checkpoint to {ckpt_path}")
-
-    # Save final best foundation checkpoint
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "config": cfg,
-        },
-        output_dir / "hdml_foundation_best.pt",
-    )
-    logger.info(f"Pre-training complete! Foundation checkpoint saved to {output_dir / 'hdml_foundation_best.pt'}")
+            torch.save(checkpoint, output_dir / f"hdml_foundation_epoch_{epoch:02d}.pt")
+    logger.info("Training completed; best checkpoint selected by held-out action prediction loss")
 
 
 if __name__ == "__main__":
@@ -189,3 +205,4 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default="configs/hdml_foundation_full.yaml")
     args = parser.parse_args()
     train_foundation(args.config)
+

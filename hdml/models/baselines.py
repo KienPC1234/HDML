@@ -375,15 +375,25 @@ class MLPBCBaseline(nn.Module):
         return self.net(inp)
 
     @torch.inference_mode()
-    def get_action(self, state: torch.Tensor, rtg: torch.Tensor) -> torch.Tensor:
-        if state.ndim == 1:
-            state = state.unsqueeze(0)
-        if rtg.ndim == 0:
-            rtg = rtg.unsqueeze(0).unsqueeze(-1)
-        elif rtg.ndim == 1:
-            if rtg.shape[0] == state.shape[0]:
-                rtg = rtg.unsqueeze(-1)
-            else:
-                rtg = rtg.unsqueeze(0)
-        inp = torch.cat([state, rtg], dim=-1)
+    def get_action(
+        self,
+        states: torch.Tensor,
+        rtgs: torch.Tensor,
+        actions: torch.Tensor | None = None,
+        timesteps: torch.Tensor | None = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        if states.ndim == 3:
+            states = states[:, -1, :]
+        elif states.ndim == 1:
+            states = states.unsqueeze(0)
+
+        if rtgs.ndim == 3:
+            rtgs = rtgs[:, -1, :]
+        elif rtgs.ndim == 1:
+            rtgs = rtgs.unsqueeze(-1)
+        elif rtgs.ndim == 0:
+            rtgs = rtgs.unsqueeze(0).unsqueeze(-1)
+
+        inp = torch.cat([states, rtgs], dim=-1)
         return self.net(inp)

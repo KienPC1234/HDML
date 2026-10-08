@@ -230,3 +230,18 @@ __marimo__/
 # Runtime logs
 logs/
 *.log
+results
+
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Excluded documents
+paper/

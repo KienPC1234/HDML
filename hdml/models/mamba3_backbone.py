@@ -9,8 +9,7 @@ def apply_rope(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
     """Apply 2D Rotary Position Embeddings (RoPE Trick) to a tensor.
     
     This simulates complex arithmetic for State Space Models by applying
-    2D Givens rotations to adjacent feature pairs. This allows real-valued
-    SSMs to track phase and angular rotations exactly (SO(3) capability).
+    2D Givens rotations to adjacent feature pairs. This introduces position-dependent feature rotations; it does not establish SO(3) equivariance.
     
     Args:
         x: Input tensor of shape (..., D).
@@ -49,14 +48,13 @@ def apply_rope(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
 
 
 class Mamba3Block(nn.Module):
-    """Mamba-3 Block integrating Complex RoPE and Exponential-Trapezoidal approximations.
-    
-    Due to the unavailability of a native Mamba-3 CUDA kernel, this block applies
-    the RoPE trick as a pre-processing step to the inputs before passing to the
-    Mamba-1/2 selective scan. This mathematically equips the SSM with complex
-    eigenvalues to model 3D periodic/rotational dynamics without custom kernels.
+    """Mamba-1 with input RoPE and an output gate.
+
+    The legacy class name is retained for API compatibility. This is not native
+    Mamba-3, does not implement trapezoidal SSM discretization, and provides no
+    SO(3) equivariance guarantee. Forward recomputes the supplied context.
     """
-    
+
     def __init__(
         self,
         d_model: int = 128,
@@ -73,7 +71,7 @@ class Mamba3Block(nn.Module):
             d_conv=d_conv,
             expand=expand,
         )
-        # Trapezoidal Gate for exponential-trapezoidal emulation
+        # Output gate; the historical attribute name is retained for checkpoint compatibility.
         self.trap_gate = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.Sigmoid()
@@ -94,8 +92,7 @@ class Mamba3Block(nn.Module):
         # 3. Mamba Core
         mamba_out = self.mamba(x_rope)
         
-        # 4. Exponential-Trapezoidal Gate approximation
-        # Emulates the trap_t gate from Mamba-3
+        # 4. Learned output gate (not an SSM integration rule)
         trap_factor = self.trap_gate(x_norm)
         mamba_out = mamba_out * trap_factor
         
@@ -104,10 +101,10 @@ class Mamba3Block(nn.Module):
 
 
 class Mamba3CognitiveBackbone(nn.Module):
-    """HDML-V2 Mamba-3 Cognitive Backbone.
+    """HDML Mamba-1 plus input RoPE and output gating (legacy class name).
     
-    Uses multi-layer Complex-Valued Selective State Space Models (Mamba-3 emulation)
-    to model long-horizon 3D dynamics with exact angular phase tracking.
+    Processes the sequence of fused multimodal state embeddings u_t
+    using gated Mamba-1 blocks; the entire input context is recomputed.
     """
 
     def __init__(
@@ -129,7 +126,7 @@ class Mamba3CognitiveBackbone(nn.Module):
         self.prop_dim = prop_dim
         self.d_subgoal = prop_dim if d_subgoal is None else d_subgoal
 
-        # Stack of Mamba-3 SSM Layers
+        # Stack of gated Mamba-1 blocks with input RoPE
         self.layers = nn.ModuleList([
             Mamba3Block(
                 d_model=d_model,
@@ -146,8 +143,8 @@ class Mamba3CognitiveBackbone(nn.Module):
         self.subgoal_head = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.SiLU(),
-            nn.Linear(d_model, d_subgoal),
-            nn.LayerNorm(d_subgoal),
+            nn.Linear(d_model, self.d_subgoal),
+            nn.LayerNorm(self.d_subgoal),
         )
 
         # Auxiliary Return / Value Head
@@ -188,3 +185,4 @@ class Mamba3CognitiveBackbone(nn.Module):
         next_states_pred = self.forward_dynamics_head(latent_features)
         
         return subgoals, latent_features, values, next_states_pred
+

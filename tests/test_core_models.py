@@ -13,6 +13,7 @@ from hdml.models.flow_policy import FlowPolicy
 from hdml.models.hiqc_critic import HiQCCritic
 from hdml.models.hdml_model import HDMLModel
 from hdml.training.losses import HDMLLoss
+from hdml.utils.config import ModelConfig
 
 
 def test_rope_and_mamba3_backbone() -> None:
@@ -68,16 +69,9 @@ def test_cfc_and_flow_policy() -> None:
 
 def test_hdml_full_model_and_loss() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = HDMLModel(
-        prop_dim=17,
-        action_dim=6,
-        d_model=128,
-        num_mamba_layers=3,
-        d_state=16,
-        d_conv=4,
-        expand=2,
-        cfc_units=32,
-    ).to(device)
+    model = HDMLModel.from_config(ModelConfig(prop_dim=17, action_dim=6, d_model=128,
+                                                num_mamba_layers=3, cfc_units=32)).to(device)
+    assert model.cfc_filter is not None
     states = torch.randn(2, 10, 17, device=device)
     actions = torch.randn(2, 10, 6, device=device)
     rtgs = torch.randn(2, 10, 1, device=device)
@@ -97,3 +91,27 @@ def test_hdml_full_model_and_loss() -> None:
     assert loss.item() > 0.0
     loss.backward()
     assert model.fusion.prop_encoder[0].weight.grad is not None
+
+
+
+def test_configured_cfc_receives_gradients() -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = HDMLModel.from_config(ModelConfig(prop_dim=17, action_dim=6)).to(device)
+    out = model(torch.randn(2, 5, 17, device=device), torch.zeros(2, 5, 1, device=device))[0]
+    out.square().mean().backward()
+    assert all(p.grad is not None and torch.isfinite(p.grad).all()
+               for p in model.cfc_filter.parameters())
+
+
+def test_hierarchical_micro_tier_shapes_and_grad() -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = HDMLModel.from_config(
+        ModelConfig(prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2, d_subgoal=64)
+    ).to(device)
+    action, _ = model.act_from_subgoal(
+        torch.zeros(1, model.d_subgoal, device=device),
+        torch.zeros(1, 17, device=device),
+        torch.zeros(1, 1, device=device),
+    )
+    assert action.shape == (1, 6)
+    assert torch.isfinite(action).all()

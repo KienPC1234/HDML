@@ -1,158 +1,77 @@
-# HDML Technical Deployment & System Architecture Guide
-## (Hierarchical Decision Mamba-Liquid Architecture)
+# Setup and Documentation
 
----
+This document specifies the software architecture, execution environment, and documentation map for the Hierarchical Decision Mamba-Liquid (HDML) repository.
 
-## 1. System Ecosystem & Library Architecture
+## 1. System Environment
 
-To realize the **HDML (Hierarchical Decision Mamba-Liquid)** architecture formulated in [research.md](file:///data/HDML_Model/research.md), the codebase integrates four foundational technological pillars:
+- **Hardware Platform**: NVIDIA GeForce RTX 4070 SUPER (12GB VRAM, Compute Capability 8.9 / Ada Lovelace).
+- **CUDA Toolkit**: CUDA 13.2 (`/usr/local/cuda-13.2`).
+- **Python Runtime**: Python 3.11.15 in local virtual environment (`/data/HDML_Model/.venv`).
+- **Core Dependencies**:
+  - `torch==2.13.0+cu130`
+  - `mamba-ssm==2.3.2.post1` (compiled via `--no-build-isolation` with native CUDA/Triton kernels)
+  - `causal-conv1d==1.6.1`
+  - `ncps==0.0.2`
+  - `gymnasium==1.3.0`
+  - `mujoco==3.4.0`
 
-```
-+---------------------------------------------------------------------------------------+
-|                                    HDML SYSTEM STACK                                  |
-+---------------------------------------------------------------------------------------+
-|  1. Vision & Multimodal  |  timm, OpenCV, TorchVision (Patch & Cross-Modal Embedding) |
-|  2. Cognitive Backbone   |  mamba-ssm, causal-conv1d (S6 / Mamba2 Long-term Planner)  |
-|  3. Reactive Policy Head |  ncps (MIT Neural Circuit Policies: Closed-form CfC / LTC) |
-|  4. RL & Simulation      |  Gymnasium, MuJoCo, Minari / D4RL, TorchRL                 |
-|  5. Edge & Optimization  |  ONNX, TensorRT, TorchScript (ARM Cortex / Jetson Deploy)  |
-+---------------------------------------------------------------------------------------+
-```
+## 2. Architecture Status & Verification
 
----
+The codebase implements the verified HDML architecture:
+1. **Backbone**: Native Mamba-3 selective state-space model (`mamba_ssm.modules.mamba3.Mamba3`) with built-in rotary state-space embedding and trapezoidal discretisation (`hdml/models/mamba3_native.py`).
+2. **Action Policy**: Flow-Matching continuous-time velocity field over an action chunk ($k=5$), solved via deterministic Euler integration.
+3. **Micro-Tier Filtering**: Closed-Form Continuous-time neural network (CfC, `ncps.torch.CfC`) smoothing actuator control signals at the micro rate.
+4. **Regularization**: HiQC critic with PAVE (Path-Action Value Equalization) and Grad-CAPS (action gradient penalty) integrated into `HDMLTrainer`.
+5. **Two-Tier Control**: Macro planning emits subgoals at low frequency ($1-5\text{ Hz}$); micro tier samples and tracks via continuous filtering ($50-100\text{ Hz}$).
 
-## 2. Core Python & PyTorch Engineering Standards
+### Verified Performance Summary (HalfCheetah-v5, RTX 4070 SUPER, Seed 42)
 
-All modules within this repository strictly adhere to modern software design patterns and deep learning best practices:
+| Metric | Measured Value | Baseline Comparison |
+| :--- | :--- | :--- |
+| **Model Parameters** | 1,396,240 (~1.40M) | Decision Transformer: 1.21M, Decision RNN: 1.01M |
+| **Pure GPU Inference** | 8.14 ms (122.9 Hz) | Forward pass on context length $T=20$ |
+| **Closed-Loop Cycle** | 9.02 ms (110.8 Hz) | Includes sensor read, normalisation, inference, and physics step |
+| **Portable CPU Inference** | 11.22 ms (89.1 Hz) | Portable Mamba-1/RoPE architecture on CPU |
+| **Normalized IQM** | 65.99 [7.81, 101.14] | Outperforms Decision RNN (45.27); DT: 95.60 [25.36, 107.79] |
+| **Mechanical Jerk** | 0.5724 | Lowest among sequence models (29.4% lower than DT's 0.8109) |
+| **Perturbed IQM** | 10.24 [8.44, 13.72] | 8.7x retention over DT (1.17); 100% completion rate |
 
-- **Strict Type Annotations**: Every function, method, and tensor contract includes explicit PEP 484/585/604 annotations with `from __future__ import annotations`.
-- **Zero Hallucination & Empirical GPU Execution**: All models and training loops are verified via real-time forward/backward passes on NVIDIA Ada Lovelace hardware (`cuda:0`).
-- **Defensive Error Handling**: No silent `except:` blocks or placeholder stubs. Complete exception tracebacks are logged and handled.
-- **Explicit Tensor Shape Contracts**: Documented in module docstrings with assertion verification at critical projection boundaries.
+## 3. Quick Start & Execution
 
----
-
-## 3. Environment Installation & CUDA Compilation Guide
-
-### Step 1: Initialize Python 3.11 Virtual Environment
+### Environment Activation
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
+source /data/HDML_Model/.venv/bin/activate
 ```
 
-### Step 2: Install PyTorch with CUDA Support
+### Test Suite Execution
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Full test suite (CUDA and portable unit tests)
+pytest tests/ tests_cpu/ -v
 ```
 
-### Step 3: Compile Mamba & Causal-Conv1D with Native CUDA Headers
+### Benchmark Replication
 ```bash
-export CUDA_HOME="/usr/local/cuda-13.2"
-export TORCH_CUDA_ARCH_LIST="8.9"
-export MAX_JOBS=8
-
-# Install causal-conv1d first
-pip install causal-conv1d>=1.4.0 --no-build-isolation
-
-# Install mamba-ssm
-pip install mamba-ssm>=2.0.0 --no-build-isolation
+# Run RLiable benchmark on HalfCheetah-v5
+python scripts/benchmark_baselines.py \
+  --config configs/halfcheetah_v5_default.yaml \
+  --checkpoint checkpoints/rebuild_long/halfcheetah_v5/best_model.pt \
+  --episodes 5 --seed 42 --device cuda \
+  --output-dir results/rebuild_det
 ```
 
-### Step 4: Install Remaining Dependencies & Package in Editable Mode
+### Latency Measurement
 ```bash
-pip install -r requirements.txt
-pip install -e .
+# Measure pure inference and end-to-end closed-loop frequency
+python scripts/measure_closed_loop.py \
+  --checkpoint checkpoints/rebuild_long/halfcheetah_v5/best_model.pt \
+  --samples 3000
 ```
 
----
+## 4. Documentation Map
 
-## 4. Complete Code Architecture & Module Reference
-
-The codebase is organized as a modular product package `hdml` (version `0.1.0`):
-
-```python
-from __future__ import annotations
-import torch
-from hdml.models import HDMLModel
-from hdml.utils.config import ModelConfig
-from hdml.data import FastTensorTrajectoryDataset, TrajectoryCollector, MinariDatasetAdapter
-from hdml.training import HDMLTrainer
-from hdml.evaluation import HDMLEvaluator
-
-# Initialize Hierarchical Mamba-Liquid Model
-cfg = ModelConfig(
-    prop_dim=27,            # Proprioceptive kinematic dimension (e.g. Ant-v4)
-    action_dim=8,           # Continuous action dimension
-    d_model=128,            # Unified multimodal token dimension U_t
-    num_mamba_layers=3,     # Depth of Mamba S6 Cognitive Backbone
-    d_subgoal=64,           # Dimension of Latent Subgoal vector c_t
-    cfc_units=32,           # Units in Closed-Form Continuous-Time Liquid Head
-)
-model = HDMLModel.from_config(cfg).to("cuda")
-
-# 1. Full Sequence Training Pass (O(N) Time Complexity)
-# states: (B, T, prop_dim), rtgs: (B, T, 1), actions: (B, T, action_dim)
-actions_pred, subgoals_pred, values_pred, next_hx = model(states, rtgs, actions)
-
-# 2. Closed-Loop Real-Time Rollout (Decoupled Hierarchical Inference)
-action, cfc_hx, subgoal = model.get_action(states_ctx, rtgs_ctx, actions_ctx)
-```
-
----
-
-## 5. Command-Line Interface (CLI) Workflow
-
-### 5.1. Trajectory Data Collection
-```bash
-python scripts/collect_data.py --env Ant-v5 --num-episodes 50 --output data/ant_v5_trajectories.npz
-```
-
-### 5.2. Offline Decision Mamba Training (High-Throughput AMP BFloat16)
-```bash
-python scripts/train_offline.py \
-    --config configs/ant_v5_default.yaml \
-    --dataset data/ant_v5_trajectories.npz \
-    --batch-size 128 \
-    --epochs 20 \
-    --amp \
-    --num-workers 4 \
-    --fast-data
-```
-
-### 5.3. Closed-Loop Simulation & Two-Tier Hierarchical Decoupling
-```bash
-python scripts/evaluate.py \
-    --config configs/ant_v5_default.yaml \
-    --checkpoint checkpoints/ant_v5/best_model.pt \
-    --macro-interval 5 \
-    --episodes 10 \
-    --device cuda
-```
-
-### 5.4. Export Reactive Policy Head to ONNX
-```bash
-python scripts/export_onnx.py \
-    --config configs/ant_v5_default.yaml \
-    --checkpoint checkpoints/ant_v5/best_model.pt \
-    --output checkpoints/ant_v5/hdml_liquid_head.onnx
-```
-
-### 5.5. Execute Automated Test Suite (28 Unit & Integration Tests)
-```bash
-python -c "import pytest; pytest.main(['tests/', '-v'])"
-```
-
----
-
-## 6. Multi-User & Benchmark Dataset Scaling
-
-### 6.1. Integrating Minari / D4RL Datasets
-The package includes native support for official Farama Minari datasets:
-```python
-from hdml.data import MinariDatasetAdapter
-
-trajectories = MinariDatasetAdapter.load_minari_dataset("door-human-v0")
-```
-
-### 6.2. Multi-GPU Training Support
-HDML seamlessly scales across multiple GPUs using PyTorch Distributed Data Parallel (DDP) or standard PyTorch Lightning wrappers.
+- [README.md](README.md): Main project overview, installation, and usage.
+- [REPRODUCIBILITY.md](REPRODUCIBILITY.md): Protocol for verifying and reproducing benchmark results.
+- [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md): Detailed rebuild log, architectural audit, and run artifacts.
+- [docs/AI_ASSISTANCE.md](docs/AI_ASSISTANCE.md): Disclosure of AI-assisted engineering and administrative tasks.
+- [paper/](paper/): Academic manuscript source (`main.tex`), compiled paper (`main.pdf`), and figures.
+- [submission/](submission/): Complete anonymous competition submission package.

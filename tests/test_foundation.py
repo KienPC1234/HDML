@@ -113,6 +113,10 @@ def test_hdml_foundation_backbone_freezing() -> None:
     for p in model.fusion_linear.parameters():
         assert not p.requires_grad
 
+    for name, p in model.named_parameters():
+        if not name.startswith("adapters."):
+            assert not p.requires_grad
+
     # Register new target embodiment after freeze
     adapter_b = model.register_embodiment("robot_b", prop_dim=20, action_dim=4)
     for p in adapter_b.parameters():
@@ -129,25 +133,26 @@ def test_fast_multi_embodiment_manager_sampling(tmp_path) -> None:
         observations=np.random.randn(100, 17).astype(np.float32),
         actions=np.random.uniform(-1, 1, size=(100, 6)).astype(np.float32),
         rewards=np.random.randn(100).astype(np.float32),
-        terminals=np.zeros(100, dtype=bool),
+        terminals=(np.arange(100) % 20 == 19),
     )
     np.savez(
         ant_path,
         observations=np.random.randn(80, 27).astype(np.float32),
         actions=np.random.uniform(-1, 1, size=(80, 8)).astype(np.float32),
         rewards=np.random.randn(80).astype(np.float32),
-        terminals=np.zeros(80, dtype=bool),
+        terminals=(np.arange(80) % 20 == 19),
     )
 
     manager = FastMultiEmbodimentManager(
         embodiment_paths={"cheetah": cheetah_path, "ant": ant_path},
         context_length=15,
     )
-    assert manager.total_steps == 180
+    assert manager.total_steps == 140
 
     batch = manager.sample_embodiment_batch("cheetah", batch_size=8, device=device)
     assert batch["states"].shape == (8, 15, 17)
     assert batch["actions_in"].shape == (8, 15, 6)
     assert batch["actions_target"].shape == (8, 15, 6)
     assert batch["rtgs"].shape == (8, 15, 1)
+
 

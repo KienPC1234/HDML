@@ -269,7 +269,7 @@ def record_antmaze_multiview_solver(
         t_time = torch.from_numpy(inp_time).unsqueeze(0).to(dev)
 
         with torch.inference_mode():
-            act, cfc_hx, _ = model.get_action(t_states, t_rtgs, t_actions, t_time, hx=cfc_hx)
+            act, cfc_hx, _ = model.get_action(t_states, t_rtgs, t_actions, t_time, hx=None)
 
         action = act[0, 0].cpu().numpy() if act.ndim == 3 else (act[0].cpu().numpy() if act.ndim == 2 else act.cpu().numpy())
         action = np.clip(action, -1.0, 1.0)
@@ -341,3 +341,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
