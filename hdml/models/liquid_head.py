@@ -18,6 +18,8 @@ class CfCActionFilter(nn.Module):
         state_dim: int,
         units: int = 32,
         residual: float = 0.1,
+        backbone_units: int = 64,
+        backbone_layers: int = 1,
     ):
         super().__init__()
         self.action_dim = action_dim
@@ -34,8 +36,8 @@ class CfCActionFilter(nn.Module):
             proj_size=None,
             return_sequences=True,
             batch_first=True,
-            backbone_units=64,
-            backbone_layers=1,
+            backbone_units=backbone_units,
+            backbone_layers=backbone_layers,
             mode="default",
         )
         
@@ -85,6 +87,8 @@ class CfCActionFilter(nn.Module):
             raise ValueError(f"Unsupported action tensor shape: {actions.shape}")
 
         cfc_input = torch.cat([flat_actions, s_repr], dim=-1)
+        if cfc_input.shape[-1] != self.input_dim:
+            raise ValueError(f"CfC input dimension {cfc_input.shape[-1]} != {self.input_dim}")
         cfc_out, next_hx = self.cfc(cfc_input, hx)
         filtered = self.out_proj(cfc_out)
         
@@ -92,3 +96,4 @@ class CfCActionFilter(nn.Module):
         filtered_action = actions + self.residual * filtered
             
         return filtered_action, next_hx
+

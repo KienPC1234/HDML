@@ -93,7 +93,7 @@ def evaluate_single_seed(
     - RTG targets are scaled by env.scale_return (as during training)
     - real episode timesteps are fed as positional context
     - the action input at the final context position is a_{t-1} (causal, no leakage)
-    - survival requires completing the full 1000-step episode
+    - completion denotes reaching the 1000-step limit, not physical survival
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -161,17 +161,19 @@ def evaluate_single_seed(
             cur_state_t = torch.from_numpy(norm_obs).unsqueeze(0).to(device)
             cur_rtg_t = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=device)
 
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
             t0 = time.perf_counter()
             with torch.inference_mode():
                 if model_type == "hdml":
                     action_t, cfc_hx, _ = model.get_action(
-                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=cfc_hx
+                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=None
                     )
                 elif model_type == "mamba_mlp":
                     action_t = model.get_action(states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t)
                 elif model_type == "transformer_liquid":
                     action_t, cfc_hx, _ = model.get_action(
-                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=cfc_hx
+                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=None
                     )
                 elif model_type == "dt":
                     action_t = model.get_action(states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t)
@@ -181,13 +183,15 @@ def evaluate_single_seed(
                     action_t = model.get_action(states=cur_state_t)
                 elif model_type == "rnn":
                     action_t, rnn_hx = model.get_action(
-                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=rnn_hx
+                        states=states_t, rtgs=rtgs_t, actions=acts_t, timesteps=time_t, hx=None
                     )
                 elif model_type == "mlp":
                     action_t = model.get_action(cur_state_t, cur_rtg_t)
                 else:
                     raise ValueError(f"Unknown model_type {model_type}")
 
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
             dt = time.perf_counter() - t0
             latencies.append(dt)
 
@@ -219,7 +223,7 @@ def evaluate_single_seed(
         "jerk": float(np.mean(jerks)),
         "latency_ms": mean_latency_ms,
         "frequency_hz": 1000.0 / max(mean_latency_ms, 1e-4),
-        "survival_rate": (completed_episodes / max(episodes, 1)) * 100.0,
+        "episode_completion_rate": (completed_episodes / max(episodes, 1)) * 100.0,
     }
 
 
@@ -268,7 +272,7 @@ def run_multi_seed_benchmark(
                 state_std = ckpt.get("state_std")
                 print(f"[LOADED] HDML checkpoint: {ckpt_path}")
             else:
-                print(f"[WARNING] HDML checkpoint not found at {ckpt_path}; evaluating UNTRAINED model.")
+                raise FileNotFoundError(f"Missing HDML checkpoint: {ckpt_path}")
         else:
             ckpt_file = baseline_dir / f"{model_type}_best.pt"
             if ckpt_file.exists():
@@ -279,10 +283,11 @@ def run_multi_seed_benchmark(
                     state_std = ckpt.get("state_std")
                 print(f"[LOADED] Trained checkpoint: {ckpt_file}")
             else:
-                print(
-                    f"[WARNING] No trained checkpoint at {ckpt_file}; "
-                    f"evaluating UNTRAINED model. Run `python scripts/train_baselines.py --model {model_type}` first."
-                )
+                raise FileNotFoundError(f"Missing trained checkpoint: {ckpt_file}")
+        if ckpt.get("state_mean") is None or ckpt.get("state_std") is None:
+            raise ValueError(f"Missing normalization for {name}")
+        if not np.allclose(ckpt["state_mean"], state_mean) or not np.allclose(ckpt["state_std"], state_std):
+            raise ValueError(f"Normalization differs across checkpoints: {name}")
         model.eval()
         instantiated[name] = model
 
@@ -295,7 +300,7 @@ def run_multi_seed_benchmark(
             "jerk": [],
             "latency_ms": [],
             "frequency_hz": [],
-            "survival_rate": [],
+            "episode_completion_rate": [],
         }
         for seed in seeds:
             metrics = evaluate_single_seed(
@@ -323,7 +328,7 @@ def run_multi_seed_benchmark(
         freq_m, freq_s = np.mean(data["frequency_hz"]), np.std(data["frequency_hz"])
         jerk_m, jerk_s = np.mean(data["jerk"]), np.std(data["jerk"])
         score_m, score_s = np.mean(data["d4rl_score"]), np.std(data["d4rl_score"])
-        surv = float(np.mean(data["survival_rate"]))
+        surv = float(np.mean(data["episode_completion_rate"]))
         print(
             f"{name:<46} | {complexity:<10} | "
             f"{freq_m:>6.1f} +/- {freq_s:<5.1f} | "
@@ -387,3 +392,4 @@ if __name__ == "__main__":
         episodes=args.episodes,
         device_str=args.device,
     )
+

@@ -139,7 +139,7 @@ def record_episode_video(
 
             with torch.inference_mode():
                 action_tensor, cfc_hx, info = model.get_action(
-                    states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=cfc_hx
+                    states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=None
                 )
                 current_subgoal = info["subgoal"]
         else:
@@ -147,7 +147,7 @@ def record_episode_video(
             t_rtg = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=dev)
             with torch.inference_mode():
                 action_tensor, cfc_hx = model.act_from_subgoal(
-                    subgoal=current_subgoal, current_prop=t_prop, rtg=t_rtg, hx=cfc_hx
+                    subgoal=current_subgoal, current_prop=t_prop, rtg=t_rtg, hx=None
                 )
 
         if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
@@ -227,3 +227,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

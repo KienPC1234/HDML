@@ -29,7 +29,8 @@ def cmd_train_foundation(args: argparse.Namespace) -> None:
 
 def cmd_benchmark_foundation(args: argparse.Namespace) -> None:
     from scripts.benchmark_foundation import run_comprehensive_benchmark
-    run_comprehensive_benchmark(checkpoint_path=args.checkpoint, output_json=args.output)
+    run_comprehensive_benchmark(checkpoint_path=args.checkpoint, output_json=args.output,
+                                allow_pretraining_overlap=args.allow_pretraining_overlap)
 
 
 def cmd_evaluate_transfer(args: argparse.Namespace) -> None:
@@ -40,7 +41,8 @@ def cmd_evaluate_transfer(args: argparse.Namespace) -> None:
         target_dataset_path=args.target_dataset,
         prop_dim=args.prop_dim,
         action_dim=args.action_dim,
-        epochs=args.epochs,
+        epochs=args.epochs, allow_pretraining_overlap=args.allow_pretraining_overlap,
+        output=args.output, device=args.device, seed=args.seed,
     )
 
 
@@ -86,7 +88,7 @@ def cmd_export_onnx(args: argparse.Namespace) -> None:
         "export_onnx.py",
         "--checkpoint", args.checkpoint,
         "--output", args.output,
-        "--device", args.device,
+        "--config", args.config,
     ]
     export_main()
 
@@ -107,6 +109,7 @@ def main() -> None:
     p_bf = subparsers.add_parser("benchmark-foundation", help="Benchmark HDML-Foundation Model")
     p_bf.add_argument("--checkpoint", type=str, default="checkpoints/hdml_foundation/hdml_foundation_best.pt")
     p_bf.add_argument("--output", type=str, default="logs/benchmark_foundation_results.json")
+    p_bf.add_argument("--allow-pretraining-overlap", action="store_true")
     p_bf.set_defaults(func=cmd_benchmark_foundation)
 
     # 3. evaluate-transfer
@@ -117,6 +120,10 @@ def main() -> None:
     p_et.add_argument("--prop-dim", type=int, default=53)
     p_et.add_argument("--action-dim", type=int, default=12)
     p_et.add_argument("--epochs", type=int, default=3)
+    p_et.add_argument("--allow-pretraining-overlap", action="store_true")
+    p_et.add_argument("--output", default="results/corrected/adapter_evaluation.json")
+    p_et.add_argument("--device", default="cuda")
+    p_et.add_argument("--seed", type=int, default=42)
     p_et.set_defaults(func=cmd_evaluate_transfer)
 
     # 4. collect-data
@@ -147,7 +154,7 @@ def main() -> None:
     p_eo = subparsers.add_parser("export-onnx", help="Export HDML model to ONNX format")
     p_eo.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
     p_eo.add_argument("--output", type=str, default="deployment/model.onnx")
-    p_eo.add_argument("--device", type=str, default="cpu")
+    p_eo.add_argument("--config", default="configs/halfcheetah_v5_default.yaml")
     p_eo.set_defaults(func=cmd_export_onnx)
 
     args = parser.parse_args()
@@ -156,3 +163,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

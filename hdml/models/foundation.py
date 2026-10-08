@@ -1,6 +1,6 @@
 """HDML-Foundation: Universal Multi-Embodiment Sequence-to-Action Backbone.
 
-Combines scalable selective state-spaces (Mamba-3) with continuous-time
+Combines gated Mamba-1 blocks with input RoPE with continuous-time
 Liquid Neural Networks (CfC ODE) for multi-robot pre-training and fast adaptation.
 """
 
@@ -82,8 +82,8 @@ class UniversalEmbodimentAdapter(nn.Module):
 class HDMLFoundationModel(nn.Module):
     """Hierarchical Decision Mamba-Liquid Foundation Model.
 
-    A generalist robot sequence backbone capable of pre-training across diverse
-    embodiments and fine-tuning quickly on new robotics hardware.
+    A multi-embodiment sequence model for simulation experiments.
+    Generalization and hardware deployment require separate empirical validation.
     """
 
     def __init__(
@@ -262,6 +262,8 @@ class HDMLFoundationModel(nn.Module):
         hx: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Step-level action inference for closed-loop execution."""
+        if states.shape[1] > 1 and hx is not None:
+            raise ValueError("Overlapping context must use hx=None")
         actions_pred, _, _, _, next_hx = self.forward(
             states=states,
             rtgs=rtgs,
@@ -274,19 +276,12 @@ class HDMLFoundationModel(nn.Module):
         return actions_pred[:, -1], next_hx
 
     def freeze_backbone(self) -> None:
-        """Freezes core Mamba-Liquid weights for fast few-shot adaptation."""
-        for param in self.mamba_backbone.parameters():
-            param.requires_grad = False
-        for param in self.cfc_filter.parameters():
-            param.requires_grad = False
-        for param in self.fusion_linear.parameters():
-            param.requires_grad = False
-        for param in self.fusion_norm.parameters():
-            param.requires_grad = False
-        self.embodiment_embedding.weight.requires_grad = False
-        self.timestep_embedding.weight.requires_grad = False
+        """Freeze every shared parameter, leaving only registered adapters trainable."""
+        for name, param in self.named_parameters():
+            param.requires_grad = name.startswith("adapters.")
 
     def unfreeze_all(self) -> None:
         """Unfreezes all parameters for full foundation pre-training."""
         for param in self.parameters():
             param.requires_grad = True
+

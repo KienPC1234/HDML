@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from hdml.models.hdml_model import HDMLModel
-from hdml.training.losses import HDMLLoss
 from hdml.utils.config import TrainingConfig
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ class HDMLTrainer:
       - Linear Warmup + Cosine Annealing learning rate schedule
       - Gradient clipping and NaN/Inf safeguards
       - Model checkpointing and loss logging
-      - Flow Matching and PAVE computation for HDML
+      - Direct action imitation and auxiliary state/value losses
     """
 
     def __init__(
@@ -78,8 +77,11 @@ class HDMLTrainer:
             self.val_loader = None
 
         # Optimizer
+        for component in (self.model.flow_policy, self.model.hiqc_critic, self.model.value_net):
+            if component is not None:
+                component.requires_grad_(False)
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            (p for p in self.model.parameters() if p.requires_grad),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
         )
@@ -92,18 +94,6 @@ class HDMLTrainer:
         else:
             self.amp_dtype = torch.float16
             self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
-
-        # Loss Function for HDML
-        self.criterion = HDMLLoss(
-            flow_weight=self.config.flow_weight,
-            q_weight=self.config.q_weight,
-            value_weight=self.config.value_weight,
-            pave_weight=self.config.pave_weight,
-            grad_caps_weight=self.config.grad_caps_weight,
-            dynamics_weight=self.config.dynamics_weight,
-            use_advantage_weighting=self.config.use_advantage_weighting,
-            advantage_temperature=self.config.advantage_temperature,
-        )
 
         # Learning Rate Schedule
         total_steps = max(1, len(self.train_loader) * self.config.max_epochs)
@@ -200,7 +190,8 @@ class HDMLTrainer:
             raw_subgoal = F.smooth_l1_loss(subgoals_pred, next_states, reduction="none")
             subgoal_loss = (raw_subgoal * mask_exp_state).sum() / (valid_tokens * subgoals_pred.shape[-1])
         else:
-            subgoal_loss = (subgoals_pred**2).sum() / (valid_tokens * subgoals_pred.shape[-1])
+            # No meaningful supervised target exists for a mismatched latent dimension.
+            subgoal_loss = states.new_zeros(())
 
         # 3. Value loss
         raw_val = F.mse_loss(values_pred, target_rtgs, reduction="none")
@@ -210,7 +201,7 @@ class HDMLTrainer:
         raw_dyn = F.smooth_l1_loss(next_states_pred, next_states, reduction="none")
         dynamics_loss = (raw_dyn * mask_exp_state).sum() / (valid_tokens * next_states_pred.shape[-1])
 
-        # 5. Grad-CAPS Smoothness loss (penalty on consecutive action changes)
+        # 5. First-difference action smoothness penalty (not second-order Grad-CAPS)
         if actions_pred.shape[1] > 1:
             diff = actions_pred[:, 1:, :] - actions_pred[:, :-1, :]
             mask_diff = mask[:, 1:].unsqueeze(-1)
@@ -436,3 +427,4 @@ class HDMLTrainer:
 
         logger.info("Training complete.")
         return history
+

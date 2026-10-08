@@ -97,7 +97,7 @@ class _CfCLiquidHead(nn.Module):
 
 
 class MambaMLPHeadAblation(nn.Module):
-    """Ablation Variant A: Mamba-3 Backbone + Standard MLP Action Head.
+    """Ablation Variant A: Mamba-1/RoPE Backbone + Standard MLP Action Head.
 
     Isolates the Mamba backbone without the Liquid/CfC filter. Used in ablation studies
     to show that mechanical jerk reduction is driven by the liquid ODE filter, not the
@@ -267,3 +267,4 @@ class TransformerLiquidHeadAblation(nn.Module):
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, hx=hx
         )
         return actions_pred[:, -1, :], next_hx, subgoals[:, -1, :]
+

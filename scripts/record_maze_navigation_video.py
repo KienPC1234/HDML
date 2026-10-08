@@ -161,7 +161,7 @@ def record_maze_solver(
 
         with torch.inference_mode():
             action_tensor, cfc_hx, info = model.get_action(
-                states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=cfc_hx
+                states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=None
             )
             subgoal_info = info.get("subgoal")
 
@@ -253,3 +253,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

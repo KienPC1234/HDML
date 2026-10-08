@@ -1,142 +1,95 @@
-# HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control
+# HDML simulation research prototype
 
-[![Preprint PDF](https://img.shields.io/badge/Preprint-PDF-red.svg)](paper/main.pdf)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Python 3.11](https://img.shields.io/badge/Python-3.11.15-blue.svg)](https://python.org)
+HDML combines a Mamba-1 backbone with input rotary position encoding, a learned output gate, a direct action predictor, and optional CfC refinement. It is a research codebase for simulated continuous control. It is not a validated physical robot controller.
 
----
+## Current verification status
 
-## Overview
+The October 2026 correction branch addresses data boundaries, evaluation leakage, missing-checkpoint handling, recurrent context replay, timing, and unsupported architecture claims. No replacement GPU benchmark scores have been produced for this revision. See [corrections](docs/CORRECTIONS.md) and [verification](docs/VERIFICATION.md).
 
-High-dimensional continuous control in multi-articulated robotic systems faces a fundamental multi-scale challenge: reconciling long-horizon macro-cognitive reasoning over temporal state-action trajectories with high-frequency, continuous-time motor execution on physical actuators. While discrete Transformer-based sequence models capture long-term behavioral dependencies, they incur quadratic computational complexity $\mathcal{O}(T^2)$, exhibit vulnerability to distribution shifts under physical perturbations, and suffer from high-frequency torque chatter.
+The v1.0.0 release, `paper/main.pdf`, figures, and existing result text files are historical artifacts. They do not validate the corrected implementation. In particular, earlier claims of unseen-robot transfer in 30 seconds, 50 N robustness, Mamba-3 discretization, 100–500 Hz dual-rate execution, and survival are not supported by the associated public implementation. Do not reuse those claims as results of this revision.
 
-**HDML** (**H**ierarchical **D**ecision **M**amba-**L**iquid) is a generalist multi-embodiment foundation architecture that couples:
-1. **Mamba-3 Cognitive Backbone**: An 8-layer Selective State Space Model ($d_{\text{model}}=384$) augmented with Rotary Position Embeddings (RoPE) for $\mathcal{O}(1)$ streaming inference and $SO(3)$ phase tracking.
-2. **Closed-Form Continuous-Time (CfC) Motor Head**: A continuous-time Liquid Neural Network ODE filter ($d_{\text{bb}}=192$, $d_{\text{cfc}}=96$) that generates smooth, chatter-free actuator torques and rejects external force disturbances.
+## Implemented path
 
----
-
-## System Architecture
-
-![HDML System Architecture](paper/figures/hdml_architecture.png)
-
-The HDML architecture establishes a hierarchical dual-rate processing paradigm:
-1. **Sensory Token Fusion**: Multi-modal proprioception $s_t$, past actions $a_{t-1}$, and return targets $\hat{R}_t$ are projected via lightweight embodiment adapters into a unified sequence token $u_t \in \mathbb{R}^{384}$.
-2. **Macro-Cognitive Sequence Modeling (10–20 Hz)**: An 8-layer Mamba-3 Selective State Space Model processes long-horizon dependencies with linear $\mathcal{O}(T)$ training and $\mathcal{O}(1)$ inference, outputting latent intent subgoals $c_t$ and value estimates $\hat{V}(s_t)$.
-3. **Continuous Motor Filter & Micro-Actuation (100–500 Hz)**: Action chunks generated via Optimal Transport Flow Matching are continuously filtered through a Closed-Form Liquid Neural ODE (CfC), dynamically adjusting stiffness $\tau(s_t)$ and executing chatter-free joint torques $a_t$.
-
----
-
-## Empirical Benchmark Results
-
-All experiments are conducted on an **NVIDIA GeForce RTX 4070 SUPER GPU** (CUDA 13.2, Python 3.11.15).
-
-### 1. Multi-Embodiment Few-Shot Transfer (Pre-trained Foundation Backbone)
-
-Pre-trained across 11 diverse robotic morphologies comprising **1,735,673 physical transitions**. Evaluated by freezing **11,989,918 parameters** (95.9%–97.0% of the core backbone) and fine-tuning only the lightweight Universal Adapter (376k–516k parameters) for under 30 seconds:
-
-| Target Robot | Morphology | State / Action Dim | Frozen % | Adaptation Time | Action Loss | Jerk ($\|\Delta^2 a\|$) |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Unitree A1 (Maze)** | 12-DoF Quadruped | $53\text{D} \to 12\text{D}$ | 96.8% | 30.0s | **0.00602** | 0.1401 |
-| **Humanoid 3D** | 17-DoF 3D Biped | $348\text{D} \to 17\text{D}$ | 95.9% | 29.4s | **0.02579** | **0.0689** |
-| **Swimmer** | 2-DoF Serpentine | $8\text{D} \to 2\text{D}$ | 97.0% | 29.3s | 0.16664 | **0.0149** |
-| **Ant** | 8-DoF Quadruped | $105\text{D} \to 8\text{D}$ | 96.6% | 29.4s | 0.16161 | 0.1677 |
-| **Hopper** | 3-DoF Monopod | $11\text{D} \to 3\text{D}$ | 96.9% | 29.0s | 0.15356 | 0.1798 |
-| **Walker2d** | 6-DoF Bipedal | $17\text{D} \to 6\text{D}$ | 96.9% | 29.2s | 0.10298 | 0.7174 |
-
-### 2. Equal-Compute Baseline Comparison (HalfCheetah-v5)
-
-Evaluated under the NeurIPS 2021 `rliable` statistical protocol (2,000 stratified bootstrap resamples with 95% CIs) comparing standalone HDML (1.44M params) against baseline sequence architectures trained on identical 1M-step expert data for 9,963 gradient steps:
-
-| Architecture | Parameters | Step Latency | Standard IQM [95% CI] | Jerk ($\|\Delta^2 a\|$) | Perturbed IQM [95% CI] | Survival Rate |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **HDML (Ours)** | 1.44M | 12.81 ms | 88.09 [41.43, 98.51] | **0.7862** | **18.88 [9.85, 26.92]** | **100.0%** |
-| **Decision Transformer** | 1.21M | 2.29 ms | 95.60 [25.36, 107.79] | 0.8109 | 1.17 [0.32, 4.19] | 100.0% |
-| **Decision RNN (LSTM)** | 1.01M | 1.05 ms | **113.91 [89.56, 115.45]** | 0.9689 | 7.14 [4.22, 10.71] | 100.0% |
-| **Diffusion Policy (DDPM)** | 0.15M | 6.71 ms | -0.41 [-0.55, 0.18] | 1.2598 | -0.29 [-0.77, 0.52] | 100.0% |
-| **Implicit Q-Learning (IQL)**| 0.29M | **0.24 ms** | 1.84 [1.79, 2.26] | 0.0080 | 2.11 [2.03, 2.32] | 100.0% |
-| **MLP-BC** | 0.07M | 0.30 ms | -0.26 [-0.26, -0.24] | 0.0028 | -0.34 [-0.40, -0.30] | 100.0% |
-
-Under physical perturbations (Gaussian sensor noise $\sigma=0.05$ and external force impulses $F=50\text{ N}$), Decision Transformer and Decision RNN collapse by 98.8% and 93.7%, whereas HDML preserves an IQM of **18.88** ($16\times$ higher than DT).
-
----
+- State, return-to-go, previous action, and timestep are fused into sequence features.
+- `Mamba3Block` is a legacy API name for **Mamba-1 + input RoPE + an output gate**, not native Mamba-3. Its state dictionary layout is retained for existing checkpoints.
+- The standalone policy predicts actions with a direct MLP and optional residual CfC filter.
+- The foundation model shares a backbone and CfC feature refinement across embodiment-specific adapters.
+- Inference recomputes the context window; no streaming Mamba state cache is implemented. Recomputed windows must use a fresh recurrent state.
+- Legacy flow/critic modules are kept for checkpoint compatibility but are inactive in the supported standalone trainer. Unsupported dual-rate execution is rejected. Use `macro_interval=1`.
+- CfC is a learned refinement; it does not by itself prove actuator smoothness, stability, or disturbance rejection.
 
 ## Installation
 
+Use an isolated environment with an explicitly compatible PyTorch, NVIDIA driver, CUDA toolkit, and Mamba build. The repository's lower-bound dependency lists are not an exact reproduction lockfile. Record the versions actually used with each run.
+
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd HDML
-
-# Create virtual environment
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
+# Install a PyTorch/CUDA build compatible with the local driver and toolkit first.
+pip install 'causal-conv1d>=1.4.0' --no-build-isolation
+pip install 'mamba-ssm>=2.0.0' --no-build-isolation
 pip install -r requirements.txt
 pip install -e .
 ```
 
----
+## Checks
 
-## Unified Command-Line Interface (`hdml_cli.py`)
-
-All repository operations are managed through the centralized multi-functional CLI:
+Data preprocessing regressions can run with Python and NumPy only:
 
 ```bash
-# 1. Multi-Embodiment Transfer Benchmark on Frozen Backbone
-python scripts/hdml_cli.py benchmark-foundation
+python -m unittest discover -s tests_cpu -v
+```
 
-# 2. Few-Shot Fine-Tuning on a Custom Target Robot
-python scripts/hdml_cli.py evaluate-transfer \
-    --checkpoint checkpoints/hdml_foundation/hdml_foundation_best.pt \
-    --target-embodiment my_custom_robot \
-    --target-dataset data/my_robot.npz \
-    --prop-dim 24 --action-dim 8 --epochs 5
+The complete model checks require the installed model dependencies and a working CUDA Mamba environment:
 
-# 3. Comparative Baseline Benchmark
-python scripts/hdml_cli.py benchmark-baselines \
-    --config configs/halfcheetah_v5_default.yaml \
-    --checkpoint checkpoints/halfcheetah_v5/best_model.pt
+```bash
+python -m pytest tests/ -v
+```
 
-# 4. Export Model to ONNX for Edge Deployment
+Passing preprocessing checks does not establish model correctness or benchmark performance.
+
+## Reproduce an existing single-task experiment
+
+Read [REPRODUCIBILITY.md](REPRODUCIBILITY.md). The following commands consume an existing, provenance-checked dataset. They do not create or certify expert demonstrations.
+
+```bash
+python scripts/train_offline.py --config configs/halfcheetah_v5_default.yaml \
+  --dataset data/halfcheetah_v5_expert.npz --epochs 3 --stride 1 --seed 42 \
+  --output-dir checkpoints/corrected/seed42
+python scripts/train_baselines.py --config configs/halfcheetah_v5_default.yaml \
+  --dataset data/halfcheetah_v5_expert.npz --model all --epochs 3 --seed 42 \
+  --output-dir checkpoints/corrected/seed42/baselines
+python scripts/benchmark_baselines.py --config configs/halfcheetah_v5_default.yaml \
+  --checkpoint checkpoints/corrected/seed42/best_model.pt --episodes 10 --seed 42 \
+  --output-dir results/corrected/seed42
+```
+
+Both training entry points now use stride 1 by default. Equal data and optimizer-step settings do not imply equal FLOPs or wall-clock compute. Each benchmark consumes trained checkpoints and records individual episode returns, configuration, perturbation settings, and checkpoint hashes in JSON. Bootstrap intervals describe evaluation episodes of one checkpoint per model; they are not training-seed uncertainty.
+
+The perturbation benchmark adds random noise to normalized actions (probability 0.05, magnitude 0.6) and observation noise/dropout. It does not apply a measured 50 N body force. Episode completion is reported separately from task return and is not a physical safety metric.
+
+## Foundation adaptation diagnostics
+
+Buffers split whole episodes before normalization and never sample across reset boundaries. Adapter validation uses held-out target episodes. A model with prior exposure to those episodes or the target embodiment must not be called unseen transfer.
+
+```bash
+python scripts/hdml_cli.py benchmark-foundation \
+  --checkpoint checkpoints/hdml_foundation/hdml_foundation_best.pt \
+  --allow-pretraining-overlap --output results/corrected/seen_adapter_diagnostics.json
+```
+
+The explicit overlap flag allows **diagnostics only**, labeled `seen_or_unverified`. Strict evaluation without that flag requires a new checkpoint with recorded data provenance and an excluded target. Held-out action loss is not closed-loop robot performance. Several foundation collection scripts use reward-filtered random actions, not expert controllers.
+
+## ONNX
+
+```bash
 python scripts/hdml_cli.py export-onnx \
-    --config configs/halfcheetah_v5_default.yaml \
-    --checkpoint checkpoints/halfcheetah_v5/best_model.pt \
-    --output-dir deployment/onnx
+  --config configs/halfcheetah_v5_default.yaml \
+  --checkpoint checkpoints/corrected/seed42/best_model.pt --output deployment/model.onnx
 ```
 
-### Automated Testing
+The portable exporter supports a fixed context length and dynamic batch size. Its parity check compares portable PyTorch to ONNX; CUDA Mamba versus the portable implementation still needs separate numerical verification.
 
-```bash
-pytest tests/ -v
-```
+## AI assistance and license
 
----
-
-## Scientific Preprint & Manuscript
-
-The complete scientific publication is available in [`paper/`](paper/):
-- **Preprint PDF**: [`paper/main.pdf`](paper/main.pdf)
-- **LaTeX Source**: [`paper/main.tex`](paper/main.tex)
-- **BibTeX References**: [`paper/references.bib`](paper/references.bib)
-
----
-
-## Citation
-
-If you find this work useful in your research, please cite:
-
-```bibtex
-@article{hdml2026,
-  title={HDML: Hierarchical Decision Mamba-Liquid Architecture for Multi-Embodiment Continuous Robotic Control},
-  author={HDML Research Initiative},
-  year={2026}
-}
-```
-
----
-
-## License
-
-This project, its source code, and pre-trained model weights (`hdml_foundation_best.pt`) are licensed under the [Apache License 2.0](LICENSE).
+Changes on the correction branch were AI-assisted; see [AI assistance record](docs/AI_ASSISTANCE.md). The code remains under the repository's [Apache 2.0 license notice](LICENSE). Existing third-party assets retain their own licenses.

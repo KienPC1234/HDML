@@ -266,7 +266,7 @@ def generate_waveforms(
             linestyle=st["linestyle"], label=label, alpha=st["alpha"], zorder=st["zorder"],
         )
 
-    ax1.set_ylabel(f"Continuous Torque Command $a_t^{{({joint_idx})}} \in [-1, 1]$", fontsize=12, fontweight="bold")
+    ax1.set_ylabel(rf"Continuous Torque Command $a_t^{{({joint_idx})}} \in [-1, 1]$", fontsize=12, fontweight="bold")
     ax1.set_title(
         f"Mechanical Actuation Waveforms & Torque Comparison ({cfg.env.env_name} Joint {joint_idx})",
         fontsize=14,

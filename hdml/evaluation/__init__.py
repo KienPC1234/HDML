@@ -9,24 +9,13 @@ from hdml.evaluation.pace_controller import PACEController
 from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
 from hdml.evaluation.unitree_a1_maze_env import UnitreeA1MazeEnv
 
-# Standard Gymnasium Environment Registrations
-try:
-    register(
-        id="UnitreeA1-v0",
-        entry_point="hdml.evaluation.quadruped_dog_env:QuadrupedDogEnv",
-        max_episode_steps=1000,
-    )
-except Exception:
-    pass
-
-try:
-    register(
-        id="UnitreeA1Maze-v0",
-        entry_point="hdml.evaluation.unitree_a1_maze_env:UnitreeA1MazeEnv",
-        max_episode_steps=600,
-    )
-except Exception:
-    pass
+# Register only when absent; errors must remain visible.
+for env_id, entry_point, limit in (
+    ("UnitreeA1-v0", "hdml.evaluation.quadruped_dog_env:QuadrupedDogEnv", 1000),
+    ("UnitreeA1Maze-v0", "hdml.evaluation.unitree_a1_maze_env:UnitreeA1MazeEnv", 600),
+):
+    if env_id not in gym.registry:
+        register(id=env_id, entry_point=entry_point, max_episode_steps=limit)
 
 __all__ = [
     "HDMLEvaluator",
@@ -36,3 +25,4 @@ __all__ = [
     "SensorNoisePerturbation",
     "ForceImpulsePerturbation",
 ]
+
