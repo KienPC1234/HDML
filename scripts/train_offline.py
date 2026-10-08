@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
     parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_expert.npz", help="Path to dataset NPZ or Minari dataset name (e.g. D4RL/pointmaze/umaze-v2)")
     parser.add_argument("--device", type=str, default="cuda", help="Training device (cuda or cpu)")
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
@@ -29,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--amp", action="store_true", default=True, help="Enable automatic mixed precision (AMP)")
     parser.add_argument("--no-amp", action="store_false", dest="amp", help="Disable AMP")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
-    parser.add_argument("--stride", type=int, default=4, help="Subsampling stride along trajectories for high-speed training")
+    parser.add_argument("--stride", type=int, default=1, help="Subsampling stride along trajectories for high-speed training")
     parser.add_argument("--fast-data", action="store_true", default=True, help="Use pre-vectorized contiguous tensor dataset")
     parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases cloud logging")
     parser.add_argument("--wandb-project", type=str, default="hdml-robotics", help="WandB project name")
@@ -44,6 +46,11 @@ def main() -> None:
 
     # Load configuration
     cfg = HDMLConfig.from_yaml(args.config)
+    if args.seed is not None:
+        cfg.training.seed = args.seed
+    if args.output_dir is not None:
+        cfg.training.output_dir = args.output_dir
+        cfg.training.log_dir = str(Path(args.output_dir) / "logs")
     if args.epochs is not None:
         cfg.training.max_epochs = args.epochs
     if args.batch_size is not None:
@@ -80,10 +87,7 @@ def main() -> None:
     else:
         data_path = Path(args.dataset)
         if not data_path.exists():
-            logger.warning(f"Dataset not found at {data_path}. Generating demonstration dataset...")
-            collector = TrajectoryCollector(env_name=cfg.env.env_name, seed=cfg.training.seed)
-            trajs = collector.collect_trajectories(num_episodes=30, max_steps=cfg.env.max_episode_steps)
-            collector.save_dataset(trajs, data_path)
+            raise FileNotFoundError(f"Dataset missing: {data_path}. Supply provenance-checked data explicitly.")
 
         trajectories = TrajectoryCollector.load_dataset(data_path)
         if args.max_episodes is not None and len(trajectories) > args.max_episodes:
@@ -139,3 +143,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

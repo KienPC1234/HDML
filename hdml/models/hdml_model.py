@@ -11,33 +11,11 @@ from hdml.utils.config import ModelConfig
 
 
 class HDMLModel(nn.Module):
-    """Toàn bộ mô hình Hierarchical Decision Mamba-Liquid (HDML).
+    """Windowed Mamba-1/RoPE policy with a direct MLP action head and optional CfC.
 
-    Integrates:
-      1. CrossModalFusion: Encodes and fuses proprioceptive kinematics, Return-to-Go,
-         actions, and temporal embeddings into U_t.
-      2. Mamba3CognitiveBackbone: Selective State Space model (Mamba-3 emulation) for
-         O(N) long-horizon latent subgoal planning c_t.
-      3. FlowPolicy: generative flow-matching action-chunk generator (replaces the
-         unimodal Gaussian policy head).
-      4. HiQCCritic: chunk-level value function for Q-guided flow training.
-      5. CfCActionFilter: MIT CfC continuous-time ODE filter for high-frequency
-         reactive motor torque smoothing.
-
-    Shape Contract:
-        Input (Sequence Training):
-            states:        (Batch, Seq_Len, prop_dim)
-            rtgs:          (Batch, Seq_Len, 1)
-            actions:       (Batch, Seq_Len, action_dim) | None
-            timesteps:     (Batch, Seq_Len) | None
-            visual_frames: (Batch, Seq_Len, C, H, W) | None
-            hx:            Previous Liquid hidden state | None
-        Output:
-            actions_pred:  None (flow-matching head handled separately)
-            subgoals_pred: (Batch, Seq_Len, d_subgoal)
-            values_pred:   (Batch, Seq_Len, 1)
-            next_states_pred: (Batch, Seq_Len, prop_dim)
-            next_hx:       None (CfC hidden state handled in get_action)
+    ``from_config`` enables CfC. Legacy flow/critic modules remain in the state
+    dictionary for loading old checkpoints, but are inactive in the supported
+    trainer and are not a validated dual-rate controller.
     """
 
     def __init__(
@@ -75,7 +53,7 @@ class HDMLModel(nn.Module):
             dropout=dropout,
         )
 
-        # 2. Mamba-3 Cognitive Planning Backbone (HDML-V2)
+        # 2. Windowed Mamba-1/RoPE backbone
         self.mamba_backbone = Mamba3CognitiveBackbone(
             d_model=d_model,
             d_state=d_state,
@@ -101,8 +79,7 @@ class HDMLModel(nn.Module):
         self.hiqc_critic = None
         self.cfc_filter = None
 
-        # Independent IQL value network V(s): a state-only MLP used for the
-        # k-step Bellman backup and the advantage weighting (Q - V).
+        # Legacy inactive value network, retained only for checkpoint compatibility.
         self.value_net = nn.Sequential(
             nn.Linear(prop_dim, 256),
             nn.SiLU(),
@@ -160,6 +137,8 @@ class HDMLModel(nn.Module):
             chunk_size=1,
             state_dim=cfg.d_model,
             units=cfg.cfc_units,
+            backbone_units=cfg.cfc_backbone_units,
+            backbone_layers=cfg.cfc_backbone_layers,
             residual=cfg.cfc_residual,
         )
             
@@ -200,7 +179,7 @@ class HDMLModel(nn.Module):
             visual_frames=visual_frames,
         )
 
-        # 2. Mamba-3 Cognitive Planning
+        # 2. Windowed sequence features
         subgoals_pred, latent_features, values_pred, next_states_pred = self.mamba_backbone(u_t)
 
         # 3. Direct Action Prediction + Liquid CfC ODE Filter
@@ -240,6 +219,8 @@ class HDMLModel(nn.Module):
             next_hx: Updated Liquid hidden state
             extras: Dictionary containing planned subgoals and predicted action
         """
+        if states.shape[1] > 1 and hx is not None:
+            raise ValueError("Overlapping context must use hx=None; otherwise history is replayed twice")
         actions_pred, subgoals_pred, values_pred, next_states_pred, next_hx = self.forward(
             states=states,
             rtgs=rtgs,
@@ -263,30 +244,8 @@ class HDMLModel(nn.Module):
         hx: torch.Tensor | None = None,
         num_flow_steps: int = 4,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Fast micro-actuation without re-running the Mamba backbone.
-
-        Reuses the latest latent subgoal from the macro-planner to generate the next
-        action chunk via flow sampling + CfC filtering. This is the low-level
-        high-frequency path used between macro-planning invocations.
-
-        Args:
-            subgoal: Latent subgoal, shape (B, d_subgoal).
-            current_prop: Current proprioceptive state, shape (B, prop_dim).
-            rtg: Current scaled return-to-go, shape (B, 1).
-            hx: CfC hidden state from the previous step, or None.
-            num_flow_steps: Euler integration steps for flow sampling.
-
-        Returns:
-            action: Next action, shape (B, action_dim).
-            next_hx: Updated CfC hidden state.
-        """
-        flow_context = torch.cat([subgoal, current_prop, rtg], dim=-1)
-        critic_context = torch.cat([subgoal, current_prop], dim=-1)
-        raw_chunk = self.flow_policy.sample(context=flow_context, num_steps=num_flow_steps)
-
-        if self.cfc_filter is not None:
-            action_chunk, next_hx = self.cfc_filter(raw_chunk, critic_context, hx)
-        else:
-            action_chunk, next_hx = raw_chunk, None
-
-        return action_chunk[:, 0, :], next_hx
+        """Reject the untrained legacy dual-rate path explicitly."""
+        raise ValueError(
+            "Dual-rate act_from_subgoal is unsupported: the active trainer does not "
+            "train the flow/critic path. Use windowed get_action with macro_interval=1."
+        )

@@ -145,7 +145,7 @@ def export_hdml_to_onnx(
     opset_version: int = 17,
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Export an HDML model to ONNX format with dynamic batch and sequence dimensions."""
+    """Export an HDML model to ONNX format with dynamic batch size and a fixed context length."""
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,10 +161,10 @@ def export_hdml_to_onnx(
     output_names = ["action", "subgoal", "next_state"]
 
     dynamic_axes = {
-        "states": {0: "batch_size", 1: "sequence_length"},
-        "rtgs": {0: "batch_size", 1: "sequence_length"},
-        "actions": {0: "batch_size", 1: "sequence_length"},
-        "timesteps": {0: "batch_size", 1: "sequence_length"},
+        "states": {0: "batch_size"},
+        "rtgs": {0: "batch_size"},
+        "actions": {0: "batch_size"},
+        "timesteps": {0: "batch_size"},
         "action": {0: "batch_size"},
         "subgoal": {0: "batch_size"},
         "next_state": {0: "batch_size"},
@@ -224,5 +224,8 @@ def export_hdml_to_onnx(
         "onnx_path": str(out_file),
         "file_size_mb": file_size_mb,
         "max_numerical_diff": max_diff,
-        "verified": True,
+        "verified": bool(verify),
+        "context_length": context_length,
+        "parity_scope": "portable PyTorch vs ONNX; CUDA vs portable parity requires a separate test",
     }
+

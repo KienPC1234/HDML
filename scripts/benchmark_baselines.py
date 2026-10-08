@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import hashlib
+from datetime import datetime, timezone
 import logging
 import time
 from pathlib import Path
@@ -41,10 +44,18 @@ def evaluate_policy(
     state_mean: np.ndarray | None = None,
     state_std: np.ndarray | None = None,
     with_perturbations: bool = False,
-    macro_interval: int = 5,
+    macro_interval: int = 1,
+    seed: int = 42,
     device: torch.device = torch.device("cuda"),
 ) -> dict[str, Any]:
     """Evaluate a single policy architecture across benchmark episodes."""
+    if macro_interval != 1:
+        raise ValueError("Only macro_interval=1 is supported")
+    if num_episodes < 1:
+        raise ValueError("num_episodes must be positive")
+    torch.manual_seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
     env = gym.make(env_name)
     obs_dim = env.observation_space.shape[0]  # type: ignore
     act_dim = env.action_space.shape[0]        # type: ignore
@@ -52,8 +63,8 @@ def evaluate_policy(
     st_mean = state_mean if state_mean is not None else np.zeros(obs_dim, dtype=np.float32)
     st_std = state_std if state_std is not None else np.ones(obs_dim, dtype=np.float32)
 
-    sensor_noise = SensorNoisePerturbation(noise_std=0.05, seed=42) if with_perturbations else None
-    force_perturb = ForceImpulsePerturbation(impulse_prob=0.05, force_magnitude=0.6, seed=42) if with_perturbations else None
+    sensor_noise = SensorNoisePerturbation(noise_std=0.05, seed=seed) if with_perturbations else None
+    force_perturb = ForceImpulsePerturbation(impulse_prob=0.05, force_magnitude=0.6, seed=seed) if with_perturbations else None
 
     returns: list[float] = []
     lengths: list[int] = []
@@ -64,7 +75,7 @@ def evaluate_policy(
     model.eval()
 
     for ep in range(num_episodes):
-        obs, _ = env.reset(seed=42 + ep)
+        obs, _ = env.reset(seed=seed + ep)
         history_states: list[np.ndarray] = []
         history_actions: list[np.ndarray] = []
         history_rtgs: list[float] = []
@@ -103,11 +114,13 @@ def evaluate_policy(
             t_rtgs = torch.from_numpy(ctx_rtgs).unsqueeze(0).to(device)
             t_time = torch.from_numpy(ctx_time).unsqueeze(0).to(device)
 
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
             step_t0 = time.perf_counter()
             with torch.inference_mode():
                 if model_type == "hdml":
                     action_t, hx, info = model.get_action(
-                        states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=hx
+                        states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=None
                     )
                 elif model_type == "diffusion":
                     action_t = model.get_action(states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time)
@@ -117,7 +130,7 @@ def evaluate_policy(
                     t_cur_state = torch.from_numpy(norm_obs).unsqueeze(0).to(device)
                     action_t = model.get_action(states=t_cur_state)
                 elif model_type == "rnn":
-                    action_t, hx = model.get_action(states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=hx)
+                    action_t, hx = model.get_action(states=t_states, rtgs=t_rtgs, actions=t_actions, timesteps=t_time, hx=None)
                 elif model_type == "mlp":
                     t_cur_state = torch.from_numpy(norm_obs).unsqueeze(0).to(device)
                     t_cur_rtg = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=device)
@@ -125,6 +138,8 @@ def evaluate_policy(
                 else:
                     raise ValueError(f"Unknown model type: {model_type}")
 
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
             step_t1 = time.perf_counter()
             latencies.append((step_t1 - step_t0) * 1000.0)
 
@@ -174,7 +189,7 @@ def evaluate_policy(
         "returns_array": np.array(returns, dtype=np.float32),
         "norm_scores_array": norm_scores,
         "mean_length": float(np.mean(lengths)),
-        "survival_rate": float(sum(l >= 1000 for l in lengths) / max(1, len(lengths)) * 100.0),
+        "episode_completion_rate": float(sum(l >= 1000 for l in lengths) / max(1, len(lengths)) * 100.0),
         "mean_smoothness_jerk": float(np.mean(smoothnesses)),
         "mean_latency_ms": mean_lat,
         "frequency_hz": freq_hz,
@@ -190,8 +205,7 @@ def load_baseline_checkpoint(
 ) -> bool:
     """Load a trained baseline checkpoint if available.
 
-    Returns True if a trained checkpoint was loaded, False otherwise (in which case
-    the model is evaluated with random initialization and a warning is emitted).
+    Missing checkpoints are fatal; random policies cannot enter a trained comparison.
     """
     ckpt_path = ckpt_dir / f"{model_type}_best.pt"
     if ckpt_path.exists():
@@ -199,30 +213,30 @@ def load_baseline_checkpoint(
         model.load_state_dict(ckpt["model_state_dict"])
         logger.info(f"Loaded trained baseline checkpoint: {ckpt_path}")
         return True
-    logger.warning(
-        f"No trained checkpoint found at {ckpt_path}. "
-        f"Evaluating UNTRAINED (random init) model: {model_type}"
-    )
-    return False
+    raise FileNotFoundError(f"Missing trained baseline checkpoint: {ckpt_path}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark HDML against trained baseline paradigms (fair comparison).")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-dir", default="results/corrected")
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per evaluation")
     parser.add_argument("--device", type=str, default="cuda", help="Execution device")
     args = parser.parse_args()
 
     cfg_path = args.config
     ckpt_path = args.checkpoint
-    if not Path(cfg_path).exists() and Path("configs/halfcheetah_v4_default.yaml").exists():
-        cfg_path = "configs/halfcheetah_v4_default.yaml"
-    if not Path(ckpt_path).exists() and Path("checkpoints/halfcheetah_v4/best_model.pt").exists():
-        ckpt_path = "checkpoints/halfcheetah_v4/best_model.pt"
+    if not Path(cfg_path).is_file():
+        raise FileNotFoundError(f"Requested config does not exist: {cfg_path}")
+    if not Path(ckpt_path).is_file():
+        raise FileNotFoundError(f"Requested HDML checkpoint does not exist: {ckpt_path}")
 
     cfg = HDMLConfig.from_yaml(cfg_path)
-    device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable; no CPU benchmark was substituted")
     logger.info(f"Execution hardware: {device}")
     baseline_ckpt_dir = Path(ckpt_path).parent / "baselines"
 
@@ -237,7 +251,19 @@ def main() -> None:
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
     else:
-        logger.warning("Checkpoint not found, evaluating with initialized weights.")
+        raise FileNotFoundError(f"Missing HDML checkpoint: {ckpt_path}")
+
+    if state_mean is None or state_std is None:
+        raise ValueError("Checkpoint is missing training normalization statistics")
+    for model_type in ("diffusion", "dt", "iql", "rnn", "mlp"):
+        candidate = baseline_ckpt_dir / f"{model_type}_best.pt"
+        if not candidate.is_file():
+            raise FileNotFoundError(f"Missing trained baseline checkpoint: {candidate}")
+        baseline_state = torch.load(candidate, map_location="cpu", weights_only=False)
+        for key, expected in (("state_mean", state_mean), ("state_std", state_std)):
+            actual = baseline_state.get(key)
+            if actual is None or np.shape(actual) != np.shape(expected) or not np.allclose(actual, expected):
+                raise ValueError(f"Training normalization differs or is missing: {candidate}, {key}")
 
     # 2. Instantiate SOTA Baselines (loading trained checkpoints when available)
     diffusion_model = DiffusionPolicyBaseline(
@@ -246,7 +272,7 @@ def main() -> None:
     load_baseline_checkpoint(diffusion_model, baseline_ckpt_dir, "diffusion", device)
 
     dt_model = DecisionTransformerBaseline(
-        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model
+        prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim, d_model=cfg.model.d_model, num_layers=cfg.model.num_mamba_layers
     ).to(device)
     load_baseline_checkpoint(dt_model, baseline_ckpt_dir, "dt", device)
 
@@ -289,6 +315,7 @@ def main() -> None:
             model_type=mtype,
             env_name=cfg.env.env_name,
             num_episodes=args.episodes,
+            seed=args.seed,
             context_length=cfg.training.context_length,
             target_return=cfg.env.target_return,
             scale_return=cfg.env.scale_return,
@@ -306,6 +333,7 @@ def main() -> None:
             model_type=mtype,
             env_name=cfg.env.env_name,
             num_episodes=args.episodes,
+            seed=args.seed,
             context_length=cfg.training.context_length,
             target_return=cfg.env.target_return,
             scale_return=cfg.env.scale_return,
@@ -331,7 +359,8 @@ def main() -> None:
     rob_scores_dict = {res["name"]: res["norm_scores_array"] for res in results_rob}
 
     # Generate 3-panel publication figure
-    plot_path = Path("plots") / f"rliable_{cfg.env.env_name.lower()}_benchmark.png"
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    plot_path = Path(args.output_dir) / f"rliable_{cfg.env.env_name.lower()}_benchmark.png"
     generate_rliable_summary_plot(std_scores_dict, env_name=cfg.env.env_name, save_path=str(plot_path))
 
     # Print Publication Comparative Tables
@@ -354,7 +383,7 @@ def main() -> None:
     print(f"PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)")
     print("-" * 125)
     print(
-        f"{'Architecture / Paradigm':<44} | {'Raw Return':<20} | {'Perturbed IQM (95% CI)':<26} | {'Jerk (Smooth)':<14} | {'Survival %':<10}"
+        f"{'Architecture / Paradigm':<44} | {'Raw Return':<20} | {'Perturbed IQM (95% CI)':<26} | {'Jerk (Smooth)':<14} | {'Complete %':<10}"
     )
     print("-" * 125)
     for res in results_rob:
@@ -362,7 +391,7 @@ def main() -> None:
         ci_str = f"{iqm_pt:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]"
         ret_str = f"{res['mean_return']:.2f} +/- {res['std_return']:.2f}"
         print(
-            f"{res['name']:<44} | {ret_str:<20} | {ci_str:<26} | {res['mean_smoothness_jerk']:<14.4f} | {res['survival_rate']:<10.1f}%"
+            f"{res['name']:<44} | {ret_str:<20} | {ci_str:<26} | {res['mean_smoothness_jerk']:<14.4f} | {res['episode_completion_rate']:<10.1f}%"
         )
     print("-" * 125)
 
@@ -376,7 +405,7 @@ def main() -> None:
     print("-" * 125 + "\n")
 
     # Save to results text file
-    res_file = Path("results") / f"benchmark_{cfg.env.env_name.lower()}.txt"
+    res_file = Path(args.output_dir) / f"benchmark_{cfg.env.env_name.lower()}.txt"
     res_file.parent.mkdir(parents=True, exist_ok=True)
     with open(res_file, "w") as f:
         f.write(f"HDML RLIABLE BENCHMARK RESULTS - {cfg.env.env_name}\n")
@@ -396,10 +425,26 @@ def main() -> None:
             point_est, ci_lo, ci_hi = stratified_bootstrap_ci(res["norm_scores_array"], stat_fn=compute_iqm)
             f.write(f"- {res['name']}:\n")
             f.write(f"    Perturbed IQM (95% CI): {point_est:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]\n")
-            f.write(f"    Survival Rate: {res['survival_rate']:.1f}%\n")
+            f.write(f"    Episode Completion Rate (not a safety metric): {res['episode_completion_rate']:.1f}%\n")
             f.write(f"    Smoothness (Jerk): {res['mean_smoothness_jerk']:.4f}\n\n")
+    def serializable(result):
+        return {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in result.items()}
+    artifacts = [Path(ckpt_path)] + [baseline_ckpt_dir / f"{m}_best.pt" for m in ("dt", "rnn", "diffusion", "iql", "mlp")]
+    raw = {
+        "protocol_version": 2, "created_utc": datetime.now(timezone.utc).isoformat(),
+        "config": {"model": vars(cfg.model), "training": vars(cfg.training), "env": vars(cfg.env)},
+        "evaluation_seed": args.seed, "episodes": args.episodes,
+        "uncertainty_scope": "episodes of one checkpoint per model, not independent training seeds",
+        "perturbation": {"kind": "action_additive_uniform", "probability": 0.05, "magnitude": 0.6,
+                         "sensor_std": 0.05, "sensor_dropout_probability": 0.02},
+        "checkpoint_sha256": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts},
+        "standard": [serializable(x) for x in results_std],
+        "perturbed": [serializable(x) for x in results_rob],
+    }
+    res_file.with_suffix(".json").write_text(json.dumps(raw, indent=2), encoding="utf-8")
     logger.info(f"Wrote benchmark report to: {res_file}")
 
 
 if __name__ == "__main__":
     main()
+

@@ -61,8 +61,7 @@ def main() -> None:
 
     ckpt_path = Path(args.checkpoint)
     if not ckpt_path.exists():
-        logger.error(f"Checkpoint not found: {ckpt_path}")
-        return
+        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
     logger.info(f"Loading checkpoint: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -95,9 +94,10 @@ def main() -> None:
     print(f"Model File Size   : {res['file_size_mb']:.2f} MB")
     print(f"Max Absolute Diff : {res['max_numerical_diff']:.6e} (PyTorch vs ONNX Runtime)")
     print(f"Inference Latency : {latency_ms:.2f} ms / step on CPU ({1000.0 / latency_ms:.0f} Hz)")
-    print(f"Verification      : PASSED (100% Numerical Parity)")
+    print(f"Verification      : PASSED (portable PyTorch vs ONNX within configured tolerance)")
     print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
     main()
+

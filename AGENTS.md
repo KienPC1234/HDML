@@ -134,7 +134,7 @@ When any of the following applies, you MUST perform web research (webfetch / off
 ### 7.1 Target Environment
 - **Hardware**: NVIDIA GeForce RTX 4070 SUPER (12GB VRAM, Compute Capability `8.9` / Ada Lovelace).
 - **System CUDA**: CUDA Toolkit 13.2 (`/usr/local/cuda-13.2/bin/nvcc`).
-- **Python Runtime**: Python 3.11.15 in `/data/HDML_Model/.venv` — ALWAYS use `/data/HDML_Model/.venv/bin/python` for execution. Never use a system python or a different venv.
+- **Python Runtime**: Python 3.11.x inside the project virtual environment — ALWAYS activate the project `.venv` for execution. Never use a system python or a different venv.
 
 ### 7.2 CUDA SSM Compilation
 - Custom C++/CUDA kernel packages (`mamba-ssm`, `causal-conv1d`) **must** be compiled with `--no-build-isolation`:
@@ -153,7 +153,7 @@ When any of the following applies, you MUST perform web research (webfetch / off
 ## 8. Verification Gate (Proof-of-Work Before Claiming Done)
 
 ### 8.1 Mandatory Gates — a task is NOT complete unless ALL apply:
-1. **Real execution**: The code ran on `cuda:0` with `/data/HDML_Model/.venv/bin/python`. Output shapes and gradient flow verified on real tensors.
+1. **Real execution**: The code ran on `cuda:0` with the project `.venv` python. Output shapes and gradient flow verified on real tensors.
 2. **Tests pass**: Run the relevant test suite (e.g., `python -c "import pytest; pytest.main(['tests/', '-v'])"`) or the specific test file for the changed code. Fix regressions before finishing.
 3. **Evidence artifacts exist**: Logs, checkpoints, or metric outputs were actually written by the run and are referenced by their real paths.
 4. **No regressions hidden**: Any config, metric, or evaluation behavior that changed is explicitly stated in your report.

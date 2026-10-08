@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
 import torch
 
@@ -78,9 +79,10 @@ def build_model(model_type: str, cfg: HDMLConfig) -> torch.nn.Module:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SOTA baseline architectures for fair benchmarking.")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
-    parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_trajectories.npz", help="Path to dataset NPZ")
+    parser.add_argument("--dataset", type=str, default="data/halfcheetah_v5_expert.npz", help="Path to dataset NPZ")
     parser.add_argument("--model", type=str, default="all", choices=["all", *MODEL_FACTORY], help="Baseline model to train")
     parser.add_argument("--device", type=str, default="cuda", help="Training device (cuda or cpu)")
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
@@ -89,6 +91,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = HDMLConfig.from_yaml(args.config)
+    if args.seed is not None:
+        cfg.training.seed = args.seed
     if args.epochs is not None:
         cfg.training.max_epochs = args.epochs
     if args.batch_size is not None:
@@ -142,7 +146,7 @@ def main() -> None:
     for model_type in models_to_train:
         cfg.training.output_dir = str(ckpt_dir / model_type)
         cfg.training.log_dir = str(ckpt_dir / model_type / "logs")
-        cfg.training.seed = cfg.training.seed + sum(ord(c) for c in model_type) % 100
+        # Use an explicit seed; model iteration order must not alter it.
         torch.manual_seed(cfg.training.seed)
         if device.type == "cuda":
             torch.cuda.manual_seed_all(cfg.training.seed)
@@ -161,9 +165,13 @@ def main() -> None:
             device=device,
         )
         trainer.train()
-        trainer.save_checkpoint(ckpt_dir / f"{model_type}_best.pt")
+        selected = Path(cfg.training.output_dir) / "best_model.pt"
+        if not selected.is_file():
+            raise FileNotFoundError(f"Validation-selected checkpoint missing: {selected}")
+        shutil.copy2(selected, ckpt_dir / f"{model_type}_best.pt")
         logger.info(f"Baseline '{model_type}' training completed. Best Val Loss: {trainer.best_loss:.4f}")
 
 
 if __name__ == "__main__":
     main()
+

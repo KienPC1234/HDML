@@ -64,6 +64,8 @@ class HDMLEvaluator:
         Returns:
             Dictionary containing episodic return, length, actions, and metrics.
         """
+        if macro_interval != 1:
+            raise ValueError("Only synchronous windowed inference is supported; use macro_interval=1")
         obs, _ = env.reset(seed=seed)
         obs_dim = env.observation_space.shape[0]  # type: ignore
         act_dim = env.action_space.shape[0]        # type: ignore
@@ -126,7 +128,7 @@ class HDMLEvaluator:
                         rtgs=t_rtgs,
                         actions=t_actions,
                         timesteps=t_timesteps,
-                        hx=cfc_hx,
+                        hx=None,
                     )
                     current_subgoal = info["subgoal"]
                     if pace_controller is not None and macro_interval > 1:
@@ -143,7 +145,7 @@ class HDMLEvaluator:
                         subgoal=current_subgoal,
                         current_prop=t_prop_current,
                         rtg=t_rtg_current,
-                        hx=cfc_hx,
+                        hx=None,
                     )
 
             if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
@@ -257,3 +259,4 @@ class HDMLEvaluator:
             f"| Length = {results['mean_length']:.1f} | Smoothness (Jerk) = {results['mean_smoothness']:.4f}"
         )
         return results
+
