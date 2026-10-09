@@ -23,3 +23,9 @@ Verbatim user prompts: "dựng hết bằng latex cả poster cho tôi, từ pap
 Resumed workspace review, made the final benchmark fail-fast/timing corrections listed in CORRECTIONS.md, and created LaTeX report/poster templates and a technical review guide. The templates contain clearly marked student-entry fields, not submission-ready scientific narrative. No new experimental scores were produced.
 
 Delivery is a local patch package; no GitHub branch or commit is asserted as published by this continuation. Preserve the actual diff and conversation; this note is not a complete transcript.
+
+## 9 October 2026 continuation — AI declaration form
+
+Verbatim user request (paraphrased scope): add a section to the AI-use declaration form (`khai_bao_ai_latex/`) covering how the student and the AI jointly discussed ideas, diagnosed the weak baseline robot controller, and used the AI to suggest current research directions (Mamba selective state space, Liquid/CfC, Flow Matching, macro/micro control) that the student then read and implemented; plus AI-assisted code fixes, ONNX export standardization, and documentation.
+
+Action: added the new declaration section to `khai_bao_ai.tex` and to the plain-text `khai_bao_ai.txt`, recompiled the PDF and regenerated the page images. No experimental numbers were produced or changed. The prompt log remains the student's responsibility to verify against the actual conversation; prompts added here are reconstructions written in the student's voice and must be confirmed by the student before submission.
