@@ -1,10 +1,17 @@
 # Tự chấm điểm & phản biện nội bộ — dự án HDML
 ## Theo Phụ lục 9 (thang 100 điểm), cuộc thi KHKT cấp TP Hà Nội 2026–2027
-_Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
+_Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực và một vòng phản biện độc lập._
 
 > Đây là đánh giá trung thực của nhóm, đóng vai trò phản biện như một giám khảo
 > khó tính. Điểm từng tiêu chí là **ước lượng chủ quan**, không phải điểm chính thức.
 > Mỗi nhận định đều gắn với minh chứng hoặc thiếu sót cụ thể.
+
+> **Phản biện độc lập (một người ngoài đọc báo cáo 15 trang):** cho 48/65 ở mục I–IV,
+> và nêu 5 điểm trừ cụ thể (mâu thuẫn vai trò CfC; chưa chứng minh chuyển giao hình
+> thái mới; "độ trễ thấp" cần diễn đạt đúng; số lần chạy chưa đủ; các phiên bản mô
+> hình chưa nối với nhau). Đây là góc nhìn hợp lý và nhóm đã sửa báo cáo theo từng
+> điểm. Bản tự chấm dưới đây **hạ điểm** để phản ánh đúng phản biện này thay vì tự
+> đánh giá lạc quan trước đó.
 
 ---
 
@@ -87,13 +94,13 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
 | Mục | Điểm ước lượng |
 |---|---:|
 | I. Câu hỏi nghiên cứu | 8,5 / 10 |
-| II. Thiết kế & phương pháp | 12,5 / 15 |
-| III. Thực hiện & kiểm tra | 17,5 / 20 |
-| IV. Sáng tạo & tác động | 15,0 / 20 |
-| V. Trình bày | 34,5 / 35 |
-| **TỔNG** | **≈ 88 / 100** |
+| II. Thiết kế & phương pháp | 12,0 / 15 |
+| III. Thực hiện & kiểm tra | 16,5 / 20 |
+| IV. Sáng tạo & tác động | 14,0 / 20 |
+| V. Trình bày | 34,0 / 35 |
+| **TỔNG** | **≈ 85 / 100** |
 
-Khoảng tin cậy hợp lý: **84–90 điểm**, tuỳ phần phỏng vấn và poster.
+Sau khi đối chiếu phản biện độc lập (48/65 ở I–IV ≈ 73,8%, tức khoảng 74 điểm nếu phần V đạt trung bình), nhóm hạ ước lượng phần I–IV xuống khoảng 51/65 để phản ánh đúng các điểm trừ về mâu thuẫn CfC, chuyển giao chưa held-out và độ trễ eager chậm hơn Transformer. Khoảng tin cậy hợp lý: **80–86 điểm**, tuỳ phần phỏng vấn và poster.
 
 ---
 
