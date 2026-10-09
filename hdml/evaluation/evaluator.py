@@ -86,6 +86,7 @@ class HDMLEvaluator:
         target_rtg = self.target_return
         cfc_hx = None
         current_subgoal: torch.Tensor | None = None
+        current_latent: torch.Tensor | None = None
         if pace_controller is not None:
             pace_controller.reset()
 
@@ -131,6 +132,7 @@ class HDMLEvaluator:
                         hx=None,
                     )
                     current_subgoal = info["subgoal"]
+                    current_latent = info.get("latent")
                     if pace_controller is not None and macro_interval > 1:
                         # Feed action / predicted states to PACE for chunk deviation tracking
                         pace_controller.set_new_plan(
@@ -138,7 +140,7 @@ class HDMLEvaluator:
                             predicted_states=None,
                         )
             else:
-                # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal
+                # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal and latent
                 t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
                 with torch.inference_mode():
                     action_tensor, cfc_hx = self.model.act_from_subgoal(
@@ -146,6 +148,7 @@ class HDMLEvaluator:
                         current_prop=t_prop_current,
                         rtg=t_rtg_current,
                         hx=None,
+                        latent=current_latent,
                     )
 
             if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)

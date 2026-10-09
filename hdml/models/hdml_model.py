@@ -305,6 +305,7 @@ class HDMLModel(nn.Module):
         last_subgoal = subgoals_pred[:, -1, :]
         return last_action, None, {
             "subgoal": last_subgoal,
+            "latent": latent_features[:, -1, :],
             "action": last_action,
             "next_state": next_states_pred[:, -1, :],
         }
@@ -317,6 +318,7 @@ class HDMLModel(nn.Module):
         rtg: torch.Tensor,
         hx: torch.Tensor | None = None,
         num_flow_steps: int = 4,
+        latent: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Micro-actuation tier: regenerate an action chunk from a frozen subgoal.
 
@@ -330,6 +332,7 @@ class HDMLModel(nn.Module):
             rtg: (B, 1) current return-to-go.
             hx: CfC hidden state or None.
             num_flow_steps: Euler steps for the flow ODE.
+            latent: (B, d_model) optional macro latent representation for CfC filtering.
 
         Returns:
             action: (B, action_dim)
@@ -347,8 +350,8 @@ class HDMLModel(nn.Module):
             else self.flow_policy.sample(flow_context)  # type: ignore[union-attr]
         )
         nominal = chunk[:, 0, :]  # (B, action_dim)
-        # CfC needs a 2D state representation; use a zero latent for the micro step.
-        latent = torch.zeros(current_prop.shape[0], self.d_model, device=current_prop.device, dtype=current_prop.dtype)
+        if latent is None:
+            latent = torch.zeros(current_prop.shape[0], self.d_model, device=current_prop.device, dtype=current_prop.dtype)
         if self.cfc_filter is not None:
             action, next_hx = self.cfc_filter(nominal, latent, hx=hx)
         else:
