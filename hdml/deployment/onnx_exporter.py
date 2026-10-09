@@ -88,11 +88,25 @@ class HDMLDeploymentWrapper(nn.Module):
         if hasattr(self.model, "deterministic"):
             self.model.deterministic = True
 
-        # Replace CUDA Mamba with portable PurePyTorchMamba
+        # Replace the SSM kernels with pure-PyTorch portable versions so the graph
+        # is traceable by torch.onnx and runnable on CPU.
         if hasattr(self.model, "mamba_backbone"):
+            from hdml.models.mamba3_native import Mamba3NativeBlock
+            from hdml.models.mamba3_portable import PortableMamba3
             for block in self.model.mamba_backbone.layers:
                 if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
                     block.mamba = PurePyTorchMamba(block.mamba)
+                elif isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
+                    nat = block.mamba
+                    port = PortableMamba3(
+                        d_model=nat.d_model,
+                        d_state=nat.d_state,
+                        expand=nat.expand,
+                        headdim=nat.headdim,
+                        rope_fraction=nat.rope_fraction,
+                    )
+                    port.load_state_dict(nat.state_dict())
+                    block.mamba = port
 
     def forward(
         self,
