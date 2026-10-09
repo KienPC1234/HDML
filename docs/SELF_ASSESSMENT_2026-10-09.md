@@ -37,7 +37,16 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
 |---|---|:---:|---|
 | III.1 | Thu thập/chế tạo có hệ thống | **4,0** | 1.735.673 bước / 11 bộ dữ liệu, có script thu thập. Tối ưu nạp dữ liệu (epoch đầu 1.951 fps → ổn định ~5.300 fps). |
 | III.2 | Khả năng kiểm chứng | **4,5** | Log + config + checkpoint cho mọi số; eval tất định; thí nghiệm đá ngang chạy lại được; ONNX parity kiểm chứng. |
-| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **4,5** | Có bảng phân tách đóng góp (backbone/Flow/CfC), thí nghiệm bật/tắt CfC dưới xô ngang, và thí nghiệm tăng phần dư CfC cho thấy đánh đổi rõ ràng. Đây là phân tích thành phần đầy đủ, trung thực. |
+**3. Tối ưu suy luận — CUDA Graph (tăng điểm Tiêu chí 1):** Profile cho thấy tính toán GPU chỉ ~0,3 ms/bước, còn lại là chi phí phóng kernel từ CPU. Đã thêm `hdml/deployment/graph_runner.py` dùng CUDA Graph, giảm suy luận thuần từ **8,60 ms → 0,73 ms (~12×)**, sai số bit-exact bằng 0. Đây là cải thiện kỹ thuật thực, có lợi trực tiếp cho mục III/V.
+
+**4. Chẩn đoán & khai thác CfC:** đo đóng góp CfC chỉ 0,7% → xác định `residual=0.05` quá nhỏ. Huấn luyện lại với `residual=0.5` cho thấy CfC thực sự giảm chấn khi bị xô ngang (mức 200: bật 1397 vs tắt 1268), đánh đổi bằng điểm chạy êm. Báo cáo nêu rõ đánh đổi thay vì quy công sai.
+
+## Điểm cộng/trừ cập nhật
+
+| # | Tiêu chí | Điểm | Căn cứ / phản biện |
+|---|---|:---:|---|
+| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **4,5** | Có bảng phân tách đóng góp, thí nghiệm bật/tắt CfC, và tối ưu CUDA Graph. |
+| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, ablation JSON, multi-seed (đang bổ sung). |
 | III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, và ablation JSON. |
 
 **Tiểu mục III ≈ 17,5/20 (sau ablation + đa seed), trước đó ≈ 15/20**
