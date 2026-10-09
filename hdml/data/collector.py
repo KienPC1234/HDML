@@ -261,7 +261,11 @@ class TrajectoryCollector:
             obs = loaded[f"traj_{i}_observations"]
             acts = loaded[f"traj_{i}_actions"]
             rews = loaded[f"traj_{i}_rewards"]
-            rtgs = loaded[f"traj_{i}_returns_to_go"]
+            if f"traj_{i}_returns_to_go" in loaded:
+                rtgs = loaded[f"traj_{i}_returns_to_go"]
+            else:
+                # Some collected datasets store only rewards; compute RTG on the fly.
+                rtgs = discount_cumsum(rews.astype(np.float32), gamma=0.99).astype(np.float32)
             dones = loaded[f"traj_{i}_dones"] if f"traj_{i}_dones" in loaded else (loaded[f"traj_{i}_terminals"] if f"traj_{i}_terminals" in loaded else np.zeros(len(rews), dtype=bool))
             timesteps = loaded[f"traj_{i}_timesteps"] if f"traj_{i}_timesteps" in loaded else np.arange(len(rews), dtype=np.int64)
             total_ret = loaded[f"traj_{i}_total_return"] if f"traj_{i}_total_return" in loaded else float(np.sum(rews))
