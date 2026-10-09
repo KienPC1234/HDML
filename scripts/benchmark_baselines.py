@@ -73,6 +73,9 @@ def evaluate_policy(
 
     model = model.to(device)
     model.eval()
+    torch.manual_seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
 
     for ep in range(num_episodes):
         obs, _ = env.reset(seed=seed + ep)

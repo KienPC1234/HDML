@@ -128,16 +128,41 @@ class FlowPolicy(nn.Module):
             a_1: Sampled action chunk (B, chunk_size, action_dim)
         """
         B = context.shape[0]
-        a_tau = torch.randn((B, self.chunk_size, self.action_dim), device=context.device)
+        a_tau = torch.randn(
+            (B, self.chunk_size, self.action_dim), device=context.device, dtype=context.dtype
+        )
         
         dt = 1.0 / num_steps
         
         for i in range(num_steps):
             tau_val = i * dt
-            tau = torch.full((B, 1), tau_val, device=context.device)
+            tau = torch.full((B, 1), tau_val, device=context.device, dtype=context.dtype)
             v = self.v_field(a_tau, tau, context)
             a_tau = a_tau + v * dt
             
+        return a_tau
+
+    def sample_deterministic(self, context: torch.Tensor, num_steps: int = 4) -> torch.Tensor:
+        """Differentiable Euler integration from a deterministic zero prior.
+
+        Uses the conditional-mean approximation (zero prior) instead of Gaussian
+        noise for stable, reproducible rollouts and gradient flow back to the
+        velocity field and backbone context.
+
+        Args:
+            context: (B, context_dim)
+            num_steps: Number of Euler integration steps.
+
+        Returns:
+            Action chunk (B, chunk_size, action_dim).
+        """
+        B = context.shape[0]
+        a_tau = torch.zeros((B, self.chunk_size, self.action_dim), device=context.device, dtype=context.dtype)
+        dt = 1.0 / num_steps
+        for i in range(num_steps):
+            tau = torch.full((B, 1), i * dt, device=context.device, dtype=context.dtype)
+            v = self.v_field(a_tau, tau, context)
+            a_tau = a_tau + v * dt
         return a_tau
 
 
