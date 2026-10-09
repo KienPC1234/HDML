@@ -1,0 +1,17 @@
+{
+  "checkpoint": "checkpoints/rebuild_unitree/unitree_a1/best_model.pt",
+  "device": "cuda",
+  "context_length": 20,
+  "equivalence_max_abs_diff": 0.0,
+  "eager_pure_inference_ms": 7.745057918014936,
+  "eager_pure_inference_hz": 129.11459289077862,
+  "graph_pure_inference_ms": 0.3775683760177344,
+  "graph_pure_inference_hz": 2648.5268987491418,
+  "speedup_pure_inference": 20.512994228232586,
+  "graph_replay_only_ms": 0.4234283023397438,
+  "graph_replay_only_hz": 2361.674915149237,
+  "graph_end_to_end_ms": 0.5361221596249379,
+  "graph_end_to_end_hz": 1865.246533923506,
+  "pure_inference_samples": 500,
+  "closed_loop_samples": 1000
+}

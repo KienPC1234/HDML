@@ -73,11 +73,18 @@ def main() -> None:
          "Điểm thưởng trên robot Unitree A1 (seed 42, 10 episode)")
     fig.tight_layout(); fig.savefig(out / "chart_unitree_returns.png", bbox_inches="tight"); plt.close(fig)
 
-    # 2. jerk, seed 42
+    # 2. jerk, seed 42 (log scale: HDML/DT are ~3x smoother than Diffusion)
     jerk = [fair[n]["jerk"] for n in ORDER]
     fig, ax = plt.subplots(figsize=(9, 6), dpi=180)
-    _bar(ax, jerk, COLORS, r"Chỉ số rung giật $\mathcal{J}$ (thấp = mượt)",
-         "Độ mượt mô-men khớp trên robot Unitree A1", fmt="{:.4f}")
+    x = np.arange(len(jerk))
+    ax.bar(x, jerk, color=COLORS, edgecolor="black", linewidth=0.8)
+    for xi, v in zip(x, jerk):
+        ax.text(xi, v * 1.1, f"{v:.3f}".replace(".", ","), ha="center", fontsize=9, fontweight="bold")
+    ax.set_xticks(x); ax.set_xticklabels([LABEL[n] for n in ORDER], rotation=20, ha="right", fontsize=9)
+    ax.set_ylabel(r"Chỉ số rung giật $\mathcal{J}$ (thang log, thấp = mượt)", fontsize=10.5, fontweight="bold")
+    ax.set_title("Độ mượt mô-men khớp trên robot Unitree A1", fontsize=11.5, fontweight="bold")
+    ax.set_yscale("log"); ax.set_ylim(min(jerk) * 0.5, max(jerk) * 2.0)
+    ax.grid(axis="y", ls="--", which="both", alpha=0.45)
     fig.tight_layout(); fig.savefig(out / "chart_unitree_jerk.png", bbox_inches="tight"); plt.close(fig)
 
     # 3. multi-seed returns with std
