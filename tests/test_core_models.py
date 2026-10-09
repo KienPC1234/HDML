@@ -103,7 +103,15 @@ def test_configured_cfc_receives_gradients() -> None:
                for p in model.cfc_filter.parameters())
 
 
-def test_untrained_dual_rate_path_is_rejected() -> None:
-    model = HDMLModel.from_config(ModelConfig(prop_dim=17, action_dim=6))
-    with pytest.raises(ValueError, match="unsupported"):
-        model.act_from_subgoal(torch.zeros(1, 64), torch.zeros(1, 17), torch.zeros(1, 1))
+def test_hierarchical_micro_tier_shapes_and_grad() -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = HDMLModel.from_config(
+        ModelConfig(prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2, d_subgoal=64)
+    ).to(device)
+    action, _ = model.act_from_subgoal(
+        torch.zeros(1, model.d_subgoal, device=device),
+        torch.zeros(1, 17, device=device),
+        torch.zeros(1, 1, device=device),
+    )
+    assert action.shape == (1, 6)
+    assert torch.isfinite(action).all()

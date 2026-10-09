@@ -230,3 +230,4 @@ __marimo__/
 # Runtime logs
 logs/
 *.log
+results

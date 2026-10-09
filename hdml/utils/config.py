@@ -27,6 +27,12 @@ class ModelConfig:
     visual_image_size: int = 64
     dropout: float = 0.1
     action_policy: str = "gaussian"  # "gaussian" (BC regressor) or "flow" (flow matching)
+    use_native_mamba3: bool = True  # use native mamba_ssm Mamba3 (else legacy Mamba-1+RoPE)
+    mamba3_headdim: int = 64
+    mamba3_ngroups: int = 1
+    mamba3_rope_fraction: float = 0.5
+    mamba3_outproj_norm: bool = False
+    mamba3_chunk: int = 64
     device: str = "cuda"
 
 
@@ -44,7 +50,9 @@ class TrainingConfig:
     flow_weight: float = 1.0
     q_weight: float = 1.0
     value_weight: float = 1.0
+    action_weight: float = 1.0
     pave_weight: float = 0.1
+    pave_interval: int = 4  # compute PAVE (double backward) every N steps
     grad_caps_weight: float = 0.05
     dynamics_weight: float = 0.1
     reg_loss_weight: float = 0.01

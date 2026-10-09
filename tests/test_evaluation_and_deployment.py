@@ -44,7 +44,12 @@ def test_rliable_metrics() -> None:
 
 def test_onnx_export(tmp_path) -> None:
     from hdml.models.hdml_model import HDMLModel
-    model = HDMLModel(prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2, cfc_units=16)
+    # ONNX export uses the portable PyTorch SSM path; the native Mamba-3 Triton
+    # kernel is not traceable, so the deployment model uses the legacy backbone.
+    model = HDMLModel(
+        prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2, cfc_units=16,
+        use_native_mamba3=False,
+    )
     onnx_file = tmp_path / "model.onnx"
     export_hdml_to_onnx(model, str(onnx_file), prop_dim=17, action_dim=6, context_length=10)
     assert onnx_file.exists()

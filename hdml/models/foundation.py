@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
+from hdml.models.mamba3_native import Mamba3NativeBackbone
 from ncps.torch import CfC
 
 
@@ -99,6 +100,7 @@ class HDMLFoundationModel(nn.Module):
         max_timesteps: int = 4096,
         max_embodiments: int = 32,
         dropout: float = 0.1,
+        use_native_mamba3: bool = True,
         device: torch.device | str = "cuda",
     ) -> None:
         super().__init__()
@@ -120,15 +122,27 @@ class HDMLFoundationModel(nn.Module):
         self.fusion_norm = nn.LayerNorm(d_model)
         self.fusion_linear = nn.Linear(d_model * 4, d_model)
 
-        # 2. Scaled Mamba Sequence Backbone
-        self.mamba_backbone = Mamba3CognitiveBackbone(
-            d_model=d_model,
-            num_layers=num_mamba_layers,
-            d_state=d_state,
-            d_conv=d_conv,
-            expand=expand,
-            d_subgoal=64,
-        )
+        # 2. Scaled Mamba sequence backbone (native Mamba-3 by default).
+        if use_native_mamba3 and not torch.cuda.is_available():
+            use_native_mamba3 = False
+        if use_native_mamba3:
+            self.mamba_backbone: nn.Module = Mamba3NativeBackbone(
+                d_model=d_model,
+                num_layers=num_mamba_layers,
+                d_state=d_state,
+                expand=expand,
+                d_subgoal=64,
+                prop_dim=d_model,
+            )
+        else:
+            self.mamba_backbone = Mamba3CognitiveBackbone(
+                d_model=d_model,
+                num_layers=num_mamba_layers,
+                d_state=d_state,
+                d_conv=d_conv,
+                expand=expand,
+                d_subgoal=64,
+            )
 
         # 3. Universal Continuous-Time Liquid CfC ODE Filter
         self.cfc_filter = CfC(

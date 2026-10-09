@@ -84,6 +84,9 @@ class HDMLDeploymentWrapper(nn.Module):
         super().__init__()
         # Clone model to CPU
         self.model = copy.deepcopy(model).to("cpu").eval()
+        # Deterministic flow solve for tracing/parity.
+        if hasattr(self.model, "deterministic"):
+            self.model.deterministic = True
 
         # Replace CUDA Mamba with portable PurePyTorchMamba
         if hasattr(self.model, "mamba_backbone"):
@@ -111,28 +114,13 @@ class HDMLDeploymentWrapper(nn.Module):
             subgoal: (Batch, Subgoal_Dim)
             next_state: (Batch, Prop_Dim)
         """
-        actions_pred, subgoals_pred, _, next_states_pred, _ = self.model(
-            states=states,
-            rtgs=rtgs,
-            actions=actions,
-            timesteps=timesteps,
+        subgoals, latent, values, next_states, _, executed = self.model.encode(
+            states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
+            action_last_only=True,
         )
-
-        if actions_pred.ndim == 3:
-            curr_action = actions_pred[:, -1, :]
-        else:
-            curr_action = actions_pred
-
-        if subgoals_pred.ndim == 3:
-            curr_subgoal = subgoals_pred[:, -1, :]
-        else:
-            curr_subgoal = subgoals_pred
-
-        if next_states_pred.ndim == 3:
-            curr_next_state = next_states_pred[:, -1, :]
-        else:
-            curr_next_state = next_states_pred
-
+        curr_action = executed[:, -1, :]
+        curr_subgoal = subgoals[:, -1, :]
+        curr_next_state = next_states[:, -1, :]
         return curr_action, curr_subgoal, curr_next_state
 
 

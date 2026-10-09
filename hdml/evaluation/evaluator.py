@@ -58,14 +58,14 @@ class HDMLEvaluator:
             sensor_noise: Optional sensor noise generator.
             force_perturb: Optional force impulse generator.
             max_steps: Maximum allowable episode steps.
-            macro_interval: Number of micro-steps per Mamba macro-planning invocation (1 = synchronous).
+            macro_interval: Number of micro-steps per Mamba macro-planning invocation (1 = synchronous, >1 = two-tier hierarchical control).
             pace_controller: Optional Phase-Aware Chunk Execution controller to monitor state deviation.
 
         Returns:
             Dictionary containing episodic return, length, actions, and metrics.
         """
-        if macro_interval != 1:
-            raise ValueError("Only synchronous windowed inference is supported; use macro_interval=1")
+        if macro_interval < 1:
+            raise ValueError("macro_interval must be >= 1")
         obs, _ = env.reset(seed=seed)
         obs_dim = env.observation_space.shape[0]  # type: ignore
         act_dim = env.action_space.shape[0]        # type: ignore
