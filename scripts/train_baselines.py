@@ -124,14 +124,20 @@ def main() -> None:
     train_dataset = dataset_cls(
         trajectories=train_trajs,
         context_length=cfg.training.context_length,
+        chunk_size=cfg.model.chunk_size,
         scale_return=cfg.env.scale_return,
+        gamma=cfg.training.gamma,
+        stride=1,
     )
     val_dataset = dataset_cls(
         trajectories=val_trajs,
         context_length=cfg.training.context_length,
+        chunk_size=cfg.model.chunk_size,
         scale_return=cfg.env.scale_return,
         state_mean=train_dataset.state_mean,
         state_std=train_dataset.state_std,
+        gamma=cfg.training.gamma,
+        stride=1,
     ) if val_trajs else None
 
     cfg.model.prop_dim = train_dataset.prop_dim
