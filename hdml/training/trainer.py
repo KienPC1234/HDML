@@ -202,7 +202,7 @@ class HDMLTrainer:
             valid_tokens * flow_elem
         )
         # Predicted action chunk (deterministic reconstruction) for Grad-CAPS.
-        pred_chunk = pred_velocity + noise
+        pred_chunk = pred_velocity if noise is None else pred_velocity + noise
 
         # 2. HiQC chunk critic loss toward the discounted c-step reward + return-to-go.
         #    The bootstrap value is the scaled return-to-go target (Monte-Carlo, no
