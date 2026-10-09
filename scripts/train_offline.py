@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-amp", action="store_false", dest="amp", help="Disable AMP")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
     parser.add_argument("--stride", type=int, default=1, help="Subsampling stride along trajectories for high-speed training")
+    parser.add_argument("--resume", type=str, default=None, help="Resume training from a checkpoint .pt (keeps the LR schedule)")
     parser.add_argument("--fast-data", action="store_true", default=True, help="Use pre-vectorized contiguous tensor dataset")
     parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases cloud logging")
     parser.add_argument("--wandb-project", type=str, default="hdml-robotics", help="WandB project name")
@@ -138,6 +139,17 @@ def main() -> None:
         config=cfg.training,
         device=device,
     )
+
+    # Optional resume from a checkpoint (continues the global step counter so the
+    # LR schedule stays monotonic).
+    if args.resume is not None:
+        ck = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(ck["model_state_dict"])
+        if "optimizer_state_dict" in ck:
+            trainer.optimizer.load_state_dict(ck["optimizer_state_dict"])
+        trainer.current_step = int(ck.get("current_step", 0))
+        trainer.best_loss = float(ck.get("best_loss", float("inf")))
+        logger.info(f"Resumed from {args.resume} at step {trainer.current_step}.")
 
     history = trainer.train()
     logger.info(f"Training finished. Best Loss: {trainer.best_loss:.4f}")
