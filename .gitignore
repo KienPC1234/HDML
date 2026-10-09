@@ -231,3 +231,14 @@ __marimo__/
 logs/
 *.log
 results
+
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
