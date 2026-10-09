@@ -243,7 +243,7 @@ results
 *.fdb_latexmk
 *.synctex.gz
 
-# Excluded documents and competition submission materials
+# Excluded documents
 paper/
 ke_hoach_nghien_cuu_latex/
 khai_bao_ai_latex/

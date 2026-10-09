@@ -44,7 +44,7 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực và một
 |---|---|:---:|---|
 | III.1 | Thu thập/chế tạo có hệ thống | **4,0** | 1.735.673 bước / 11 bộ dữ liệu, có script thu thập. Tối ưu nạp dữ liệu (epoch đầu 1.951 fps → ổn định ~5.300 fps). |
 | III.2 | Khả năng kiểm chứng | **4,5** | Log + config + checkpoint cho mọi số; eval tất định; thí nghiệm đá ngang chạy lại được; ONNX parity kiểm chứng. |
-**3. Tối ưu suy luận — CUDA Graph (tăng điểm Tiêu chí 1):** Profile cho thấy tính toán GPU chỉ ~0,3 ms/bước, còn lại là chi phí phóng kernel từ CPU. Đã thêm `hdml/deployment/graph_runner.py` dùng CUDA Graph, giảm suy luận thuần từ **8,60 ms → 0,73 ms (~12×)**, sai số bit-exact bằng 0. Đây là cải thiện kỹ thuật thực, có lợi trực tiếp cho mục III/V.
+**3. Tối ưu suy luận — CUDA Graph (tăng điểm Tiêu chí 1):** Profile cho thấy tính toán GPU chỉ ~0,35 ms/bước, còn lại là chi phí phóng kernel từ CPU. Đã thêm `hdml/deployment/graph_runner.py` dùng CUDA Graph. Đo lại trong cùng phiên (`scripts/bench_cuda_graph_inference.py`, lưu `results/rebuild_unitree/cuda_graph_bench.json`): suy luận thuần eager 7,75 ms → graph **0,38 ms (~20×)**, sai số bằng 0; vòng kín đầu-cuối 0,54 ms. Đây là cải thiện kỹ thuật thực, có lợi trực tiếp cho mục III/V.
 
 **4. Chẩn đoán & khai thác CfC:** đo đóng góp CfC chỉ 0,7% → xác định `residual=0.05` quá nhỏ. Huấn luyện lại với `residual=0.5` cho thấy CfC thực sự giảm chấn khi bị xô ngang (mức 200: bật 1397 vs tắt 1268), đánh đổi bằng điểm chạy êm. Báo cáo nêu rõ đánh đổi thay vì quy công sai.
 
