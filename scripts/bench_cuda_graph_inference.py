@@ -6,7 +6,9 @@ control step, then the captured graph is replayed.
 """
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -75,13 +77,43 @@ def main() -> None:
     diff = float((eager - graph).abs().max().item())
     print(f"equivalence max|diff| = {diff:.3e}")
 
-    # 2. closed-loop latency (graph) over a real episode
+    # 1b. pure inference latency: eager vs graph replay (no env step, no sensor read)
+    def _eager():
+        with torch.inference_mode():
+            return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)[0]
+
+    for _ in range(20):
+        _eager()
+    torch.cuda.synchronize()
+    N = 500
+    t0 = time.perf_counter()
+    for _ in range(N):
+        _eager()
+    torch.cuda.synchronize()
+    eager_ms = (time.perf_counter() - t0) * 1000.0 / N
+    print(f"eager pure inference: {eager_ms:.3f} ms ({1000.0/eager_ms:.0f} Hz), n={N}")
+
+    for _ in range(20):
+        gr(hs, hr, ha)
+    torch.cuda.synchronize()
+    t0 = time.perf_counter()
+    for _ in range(N):
+        gr(hs, hr, ha)
+    torch.cuda.synchronize()
+    pure_ms = (time.perf_counter() - t0) * 1000.0 / N
+    print(f"graph pure inference: {pure_ms:.3f} ms ({1000.0/pure_ms:.0f} Hz), n={N}")
+
+    # 2. closed-loop latency (graph) over a real episode. Two boundaries:
+    #    - replay_only: just graph.replay() + static-buffer copies
+    #    - end_to_end : normalise sensor + build context + replay + clip action
     env = QuadrupedDogEnv(max_episode_steps=cfg.env.max_episode_steps)
     obs, _ = env.reset(seed=42)
     HS, HA, HR, HT = [], [], [], []
     rtg = float(cfg.env.target_return)
     lat = []
+    lat_e2e = []
     for t in range(cfg.env.max_episode_steps):
+        t_e2e = time.perf_counter()
         n = (np.asarray(obs, np.float32) - sm) / ss
         HS.append(n); HR.append(rtg / cfg.env.scale_return); HT.append(t)
         if not HA:
@@ -99,11 +131,36 @@ def main() -> None:
         a = gr(cts[None], ctr[None], cta[None])
         torch.cuda.synchronize(); lat.append((time.perf_counter() - t0) * 1000)
         a = np.clip(a.cpu().numpy()[0].astype(np.float32), -1, 1)
+        lat_e2e.append((time.perf_counter() - t_e2e) * 1000)
         HA.append(a); obs, r, term, trunc, _ = env.step(a); rtg -= float(r)
         if term or trunc:
             break
     env.close()
-    print(f"graph closed-loop: {np.mean(lat):.2f} ms ({1000/np.mean(lat):.0f} Hz), n={len(lat)}")
+    loop_ms = float(np.mean(lat))
+    e2e_ms = float(np.mean(lat_e2e))
+    print(f"graph replay only: {loop_ms:.2f} ms ({1000/loop_ms:.0f} Hz), n={len(lat)}")
+    print(f"graph end-to-end : {e2e_ms:.2f} ms ({1000/e2e_ms:.0f} Hz), n={len(lat_e2e)}")
+
+    out_path = "results/rebuild_unitree/cuda_graph_bench.json"
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(json.dumps({
+        "checkpoint": "checkpoints/rebuild_unitree/unitree_a1/best_model.pt",
+        "device": "cuda",
+        "context_length": ctx,
+        "equivalence_max_abs_diff": diff,
+        "eager_pure_inference_ms": eager_ms,
+        "eager_pure_inference_hz": 1000.0 / eager_ms,
+        "graph_pure_inference_ms": pure_ms,
+        "graph_pure_inference_hz": 1000.0 / pure_ms,
+        "speedup_pure_inference": eager_ms / pure_ms,
+        "graph_replay_only_ms": loop_ms,
+        "graph_replay_only_hz": 1000.0 / loop_ms,
+        "graph_end_to_end_ms": e2e_ms,
+        "graph_end_to_end_hz": 1000.0 / e2e_ms,
+        "pure_inference_samples": N,
+        "closed_loop_samples": len(lat),
+    }, indent=2), encoding="utf-8")
+    print("saved", out_path)
 
 
 if __name__ == "__main__":
