@@ -43,7 +43,10 @@ def main() -> None:
         state_mean = ckpt.get("state_mean")
         state_std = ckpt.get("state_std")
     else:
-        logger.warning("No checkpoint provided or checkpoint file not found. Evaluating model with initialized weights.")
+        raise FileNotFoundError(
+            f"Checkpoint missing: {args.checkpoint}. Refusing to evaluate random weights "
+            "(AGENTS.md anti-cheating: warn-and-abort, not silently proceed)."
+        )
 
     evaluator = HDMLEvaluator(
         model=model,

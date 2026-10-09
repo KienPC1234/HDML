@@ -239,17 +239,25 @@ class HDMLModel(nn.Module):
 
         Uses the stochastic flow sampler (trained with a Gaussian prior). A fixed
         evaluation generator makes closed-loop rollouts reproducible.
+        Micro-batches over B*T so large batches do not OOM; math is identical.
         """
         assert self.flow_policy is not None, "flow_policy is not initialised"
         B, T, _ = flow_context.shape
         flat = flow_context.reshape(B * T, -1)
-        if isinstance(self.flow_policy, FlowPolicy):
-            if self.deterministic:
-                chunk = self.flow_policy.sample_deterministic(flat, num_steps=self.num_flow_steps)
-            else:
-                chunk = self.flow_policy.sample(flat, num_steps=self.num_flow_steps)
-        else:  # GaussianActionPolicy
-            chunk = self.flow_policy.sample(flat)  # type: ignore[operator]
+        # Cap micro-batch to bound peak memory of the Euler loop.
+        _mb = 2048
+        chunks: list[torch.Tensor] = []
+        for s in range(0, flat.shape[0], _mb):
+            fc_mb = flat[s : s + _mb]
+            if isinstance(self.flow_policy, FlowPolicy):
+                if self.deterministic:
+                    chunk_mb = self.flow_policy.sample_deterministic(fc_mb, num_steps=self.num_flow_steps)
+                else:
+                    chunk_mb = self.flow_policy.sample(fc_mb, num_steps=self.num_flow_steps)
+            else:  # GaussianActionPolicy
+                chunk_mb = self.flow_policy.sample(fc_mb)  # type: ignore[operator]
+            chunks.append(chunk_mb)
+        chunk = torch.cat(chunks, dim=0) if len(chunks) > 1 else chunks[0]
         return chunk.view(B, T, self.chunk_size, self.action_dim)
 
     def forward(

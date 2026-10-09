@@ -37,8 +37,9 @@ training:
   use_amp: true
   amp_dtype: bfloat16
   num_workers: 0
-  pin_memory: false
+  pin_memory: true
   persistent_workers: false
+  prefetch_factor: 2
   use_fast_dataset: true
   use_tensorboard: true
   use_wandb: false
