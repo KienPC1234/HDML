@@ -27,7 +27,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("rollout_chunk")
 
 
-@torch.inference_mode()
 def rollout(model: HDMLModel, cfg: HDMLConfig, chunk_k: int, episodes: int, seed: int,
             device: torch.device, state_mean, state_std) -> tuple[float, float]:
     env = gym.make(cfg.env.env_name)
@@ -37,11 +36,10 @@ def rollout(model: HDMLModel, cfg: HDMLConfig, chunk_k: int, episodes: int, seed
     for ep in range(episodes):
         torch.manual_seed(seed + ep)
         obs, _ = env.reset(seed=seed + ep)
-        target_rtg = float(cfg.env.target_return)
-        scale_rtg = float(cfg.env.scale_return)
+        # Histories grow together: one (state, action, rtg, t) tuple per step.
         hs: list[np.ndarray] = [(np.asarray(obs, dtype=np.float32) - state_mean) / state_std]
         ha: list[np.ndarray] = [np.zeros(act_dim, dtype=np.float32)]
-        hr: list[float] = [target_rtg / scale_rtg]
+        hr: list[float] = [0.0]
         ht: list[int] = [0]
         total = 0.0
         t = 0
@@ -53,23 +51,17 @@ def rollout(model: HDMLModel, cfg: HDMLConfig, chunk_k: int, episodes: int, seed
             tr = torch.from_numpy(np.array(hr[-cl:], dtype=np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
             tt = torch.from_numpy(np.array(ht[-cl:], dtype=np.int64)).unsqueeze(0).to(device)
             with torch.inference_mode():
-                _, lat, _, _, flow_ctx, _ = model.encode(states=ts, rtgs=tr, actions=ta, timesteps=tt)
+                _, _, _, _, flow_ctx, _ = model.encode(states=ts, rtgs=tr, actions=ta, timesteps=tt)
                 chunk = model._sample_chunk(flow_ctx)[0, -1]  # (k, action_dim)
             k = min(chunk_k, chunk.shape[0])
             for j in range(k):
-                nominal = chunk[j:j+1]
-                if model.cfc_filter is not None:
-                    filtered, _ = model.cfc_filter(nominal, lat[:, -1, :])
-                    a = np.clip(filtered[0].cpu().numpy().astype(np.float32), -1.0, 1.0)
-                else:
-                    a = np.clip(nominal[0].cpu().numpy().astype(np.float32), -1.0, 1.0)
+                a = np.clip(chunk[j].cpu().numpy().astype(np.float32), -1.0, 1.0)
                 obs, r, term, trunc, _ = env.step(a)
                 total += float(r)
-                target_rtg -= float(r)
                 t += 1
                 hs.append((np.asarray(obs, dtype=np.float32) - state_mean) / state_std)
                 ha.append(a)
-                hr.append(target_rtg / scale_rtg)
+                hr.append(0.0)
                 ht.append(t)
                 if term or trunc:
                     done = True
