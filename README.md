@@ -28,8 +28,9 @@ All six architectures were trained on the *same* 100,000-step Unitree A1 dataset
 
 #### Key Quantitative Takeaways:
 - **Return Advantage:** HDML reaches the highest return ($1495.3$), above Decision RNN ($1454.0$), IQL ($1452.3$) and Decision Transformer ($1449.1$).
-- **Actuator Smoothness:** HDML achieves $14.3\%$ lower mechanical jerk across the 12 motors than Decision Transformer ($\mathcal{J} = 0.0628$ vs $0.0733$), preventing actuator overheating and gearbox wear.
-- **Honest caveat:** models are evaluated deterministically (episode spread $0$); multi-seed training spread is future work.
+- **Actuator smoothness:** HDML achieves $14.3\%$ lower mechanical jerk across the 12 motors than Decision Transformer ($\mathcal{J} = 0.0628$ vs $0.0733$), preventing actuator overheating and gearbox wear.
+- **Multi-seed spread (3 seeds 42/100/2024):** HDML 1465.7 ± 23.0, ahead of Decision Transformer 1443.1 ± 11.1, Decision RNN 1437.9 ± 13.0, IQL 1430.0 ± 19.2, MLP-BC 1310.8 ± 25.8, Diffusion 986.7 ± 32.7. The gap to DT/RNN/IQL (20–35 points) is within one seed standard deviation, so no statistical-superiority claim is made there. Source: `results/rebuild_unitree/multiseed.json`.
+- **CUDA-graph inference:** pure eager inference 7.75 ms drops to 0.38 ms (bit-exact, 0 error) after capturing one control step into a CUDA graph; end-to-end closed loop 0.54 ms. Source: `results/rebuild_unitree/cuda_graph_bench.json`.
 
 ### 1.1b Measured Lateral-Kick Robustness
 
@@ -37,7 +38,7 @@ A genuine lateral impulse is applied via `qfrc_applied` for 3 control steps; HDM
 
 | Kick level | HDML peak roll | HDML return | DT peak roll | DT return | Survival |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 50 | 7.0 deg | 1488.9 | 8.0 deg | 1445.3 | both 100% |
+| 50 | 7.0 deg | 1489.1 | 8.0 deg | 1445.3 | both 100% |
 | 100 | 9.4 deg | 1498.9 | 9.6 deg | 1468.1 | both 100% |
 | 200 | **28.2 deg** | **1445.8** | 33.2 deg | 1207.0 | both 100% |
 | 400 | 50.9 deg | 293.1 | 46.1 deg | 286.6 | both 0% (fall at step 209/208) |
@@ -48,12 +49,11 @@ Force values are the MuJoCo generalised force `qfrc_applied` in uncalibrated uni
 
 ### 1.2 Multi-Morphology Foundation Transfer
 
-Adapting a pre-trained HDML backbone by freezing 11,606,044 backbone parameters and fine-tuning lightweight embodiment adapters (760k to 900k params, i.e. 6%–7% of the backbone) for 3 epochs. Source: `logs/benchmark_foundation_results.json`. Humanoid is retained here as a past foundation-transfer record only; the headline result is Unitree A1.
+Adapting a pre-trained HDML backbone by freezing 11,606,044 backbone parameters and fine-tuning lightweight embodiment adapters (760k to 900k params, i.e. 6%–7% of the backbone) for 3 epochs. Source: `logs/benchmark_foundation_results.json`. Every target below already appears in the pre-training set, so this measures adapter convergence on a *familiar* morphology, not adaptation to an unseen one.
 
 | Target Robot | Morphology | Space ($d_s \to d_a$) | Frozen Backbone | Adaptation Time | Action Loss | Actuator Jerk ($\mathcal{J}$) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Unitree A1 (Maze)** | 12-DoF Quadruped | $53\text{D} \to 12\text{D}$ | 93.7% | 30.0 s | **0.00602** | 0.1401 |
-| Humanoid 3D | 17-DoF Bipedal | $348\text{D} \to 17\text{D}$ | 92.8% | 29.4 s | 0.02579 | 0.0689 |
 | Swimmer | 2-DoF Planar | $8\text{D} \to 2\text{D}$ | 93.9% | 29.3 s | 0.16664 | **0.0149** |
 | Ant | 8-DoF Quadruped | $105\text{D} \to 8\text{D}$ | 93.5% | 29.4 s | 0.16161 | 0.1677 |
 | Hopper | 3-DoF Monopod | $11\text{D} \to 3\text{D}$ | 93.8% | 29.0 s | 0.15356 | 0.1798 |
@@ -69,7 +69,8 @@ ONNX exported directly from the Unitree A1 policy. Source: `results/onnx_unitree
 | :--- | :---: | :---: | :---: |
 | Parity error: Portable PyTorch $\leftrightarrow$ ONNX Runtime | $|\Delta| \le 1 \times 10^{-5}$ | **1.10 $\times 10^{-6}$** | Passed tolerance |
 | Native GPU inference latency (RTX 4070 SUPER) | $\le 15$ ms | **8.60 ms** (116 Hz) | Real-time ready |
-| End-to-end closed-loop frequency on GPU | $\ge 40$ Hz | **80.9 Hz** (12.36 ms) | Real-time ready |
+| CUDA-graph inference latency (bit-exact) | $\le 15$ ms | **0.38 ms** (2649 Hz) | Real-time ready |
+| End-to-end closed-loop frequency on GPU | $\ge 40$ Hz | **80.9 Hz** (eager) | Real-time ready |
 | CPU inference latency (ONNX Runtime) | $< 15$ ms | **2.41 ms** (415 Hz) | Real-time ready |
 | ONNX model binary size | $< 50$ MB | **4.98 MB** | Compact |
 | VRAM footprint during inference | $< 2.0$ GB | **0.3 GB** | Low resource usage |
