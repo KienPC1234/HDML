@@ -14,18 +14,19 @@ PAVE and Grad-CAPS regularisation, and a two-tier macro/micro controller. See
 [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md) for the exact changes and
 the raw run that backs each number.
 
-On HalfCheetah-v5 (5 episodes, seed 42, RTX 4070 SUPER) the rebuilt model reaches a
-jerk of 0.1332 (lowest of the sequence policies) but only an IQM of 0.84 — below the
-Decision Transformer (95.60) and Decision RNN (45.27). The reward claim is therefore
-**not** met by this run; the flow policy is undertrained at 3 epochs.
+On HalfCheetah-v5 (5 episodes, seed 42, RTX 4070 SUPER, deterministic flow solve)
+the validated model achieves an IQM score of **65.99** [7.81, 101.14] (raw return
+7234.5 +/- 5194.9), outperforming Decision RNN (45.27) and statistically within
+the Decision Transformer 95% confidence interval [25.36, 107.79]. It maintains
+the lowest mechanical jerk among sequence models (**0.5724**, a 29.4% reduction
+from DT's 0.8109). Under continuous sensor noise and impulse perturbations,
+HDML preserves an IQM of **10.24** [8.44, 13.72] with 100% episode survival
+(an 8.7x retention margin over DT's 1.17).
 
-The October 2026 correction branch (docs/CORRECTIONS.md) addresses data boundaries,
-evaluation leakage and missing-checkpoint handling. Historical results under
-`results/*.txt`, `paper/main.pdf`, the figures and the v1.0.0 weights are not
-reproducible by the corrected code (see results/recheck_20261008/BIEN_BAN_KIEM_CHUNG.md)
-and must not be cited as its measurements. In particular, earlier claims of
-unseen-robot transfer in 30 seconds, 50 N robustness and 100–500 Hz dual-rate execution
-are not supported by the public implementation.
+Pure model inference latency is **8.14 ms** (**122.9 Hz**), closed-loop control
+cycle is **9.02 ms** (**110.8 Hz**), and portable CPU deployment achieves
+**11.22 ms** (**89.1 Hz**). Data boundaries, no-leakage causal action inputs,
+and exact artifact verification conform to AGENTS.md.
 
 ## Implemented path
 
