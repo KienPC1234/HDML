@@ -269,6 +269,14 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         target_actions = np.zeros((k, self.action_dim), dtype=np.float32)
         target_actions[:actual_len] = raw_actions
 
+        # Action-chunk target for the HiQC critic / flow policy: next `c` actions.
+        c = getattr(self, "chunk_size", 1)
+        target_chunks = np.zeros((k, c, self.action_dim), dtype=np.float32)
+        for j in range(actual_len):
+            end = min(start_t + j + 1 + c, traj_len)
+            chunk = traj["actions"][start_t + j + 1 : end]
+            target_chunks[j, : len(chunk)] = chunk
+
         return {
             "states": torch.from_numpy(padded_states),
             "actions": torch.from_numpy(padded_actions),
@@ -276,7 +284,10 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             "timesteps": torch.from_numpy(padded_timesteps),
             "mask": torch.from_numpy(mask),
             "target_actions": torch.from_numpy(target_actions),
+            "target_chunks": torch.from_numpy(target_chunks),
             "target_rtgs": torch.from_numpy(padded_rtgs.copy()),
+            "reward_chunks": torch.from_numpy(padded_rtgs.copy()),
+            "next_states": torch.from_numpy(padded_states.copy()),
         }
 
 
