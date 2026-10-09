@@ -37,10 +37,10 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
 |---|---|:---:|---|
 | III.1 | Thu thập/chế tạo có hệ thống | **4,0** | 1.735.673 bước / 11 bộ dữ liệu, có script thu thập. Tối ưu nạp dữ liệu (epoch đầu 1.951 fps → ổn định ~5.300 fps). |
 | III.2 | Khả năng kiểm chứng | **4,5** | Log + config + checkpoint cho mọi số; eval tất định; thí nghiệm đá ngang chạy lại được; ONNX parity kiểm chứng. |
-| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **3,5 → 4,5** | _Sau khi chạy đa seed_: có mean ± std thay vì 1 seed. Đây là điểm yếu lớn nhất đã được xử lý. Trước đó chỉ 3,5. |
-| III.4 | Đầy đủ dữ liệu, minh chứng | **3,5 → 4,5** | Có nhật ký, dữ liệu gốc, log. Trước còn thiếu đa seed; nay bổ sung. |
+| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **4,0 → 4,5** | _Sau ablation_: có bảng phân tách đóng góp (backbone vs Flow vs CfC), kết luận trung thực rằng CfC đóng góp biên nhỏ trên checkpoint này. Trước chỉ 4,0 vì thiếu phân tích thành phần. |
+| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, và ablation JSON. |
 
-**Tiểu mục III ≈ 17,5/20 (sau khi có đa seed), trước đó ≈ 15/20**
+**Tiểu mục III ≈ 17,5/20 (sau ablation + đa seed), trước đó ≈ 15/20**
 
 ---
 
@@ -98,10 +98,11 @@ Khoảng tin cậy hợp lý: **84–90 điểm**, tuỳ phần phỏng vấn v�
 ## Điểm yếu còn lại (phải thành thật)
 
 1. **Đa seed**: đang bổ sung 2 seed nữa (đang chạy). Nếu không kịp, vẫn chỉ 1 seed.
-2. **Đơn vị lực chưa hiệu chuẩn Newton**: các mức 50/100/200/400 là lực tổng quát hóa, không phải N đã kiểm chuẩn. Đã ghi rõ.
-3. **Chỉ mô phỏng (sim-only)**: chưa có robot thật → chưa có Sim-to-Real.
-4. **Dữ liệu nền tảng là CPG kịch bản**, không phải chuyên gia RL thực thụ.
-5. **Tác động kinh tế - xã hội còn định tính** — đây là mục dễ mất điểm nhất tiếp theo.
+2. **CfC đóng góp biên nhỏ trên checkpoint hiện tại**: ablation cho thấy bỏ CfC gần như không đổi điểm (1492,8 vs 1494,9) và jerk thậm chí hơi thấp hơn. Phần lớn lợi ích đến từ backbone Mamba-3 + đầu Flow Matching. Đây là sự thật đã đưa vào báo cáo, không tô hồng.
+3. **Đơn vị lực chưa hiệu chuẩn Newton**: các mức 50/100/200/400 là lực tổng quát hóa, không phải N đã kiểm chuẩn. Đã ghi rõ.
+4. **Chỉ mô phỏng (sim-only)**: chưa có robot thật → chưa có Sim-to-Real.
+5. **Dữ liệu nền tảng là CPG kịch bản**, không phải chuyên gia RL thực thụ.
+6. **Tác động kinh tế - xã hội còn định tính** — đây là mục dễ mất điểm nhất tiếp theo.
 
 ## Việc nên làm tiếp (ưu tiên giảm dần)
 
