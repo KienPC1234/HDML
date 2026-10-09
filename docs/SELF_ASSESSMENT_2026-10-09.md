@@ -53,7 +53,7 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực và một
 | # | Tiêu chí | Điểm | Căn cứ / phản biện |
 |---|---|:---:|---|
 | III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **4,5** | Có bảng phân tách đóng góp, thí nghiệm bật/tắt CfC, và tối ưu CUDA Graph. |
-| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, ablation JSON, multi-seed (đang bổ sung). |
+| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, ablation JSON, multi-seed (`multiseed.json`) và CUDA-graph log. |
 | III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, và ablation JSON. |
 
 **Tiểu mục III ≈ 17,5/20 (sau ablation + đa seed), trước đó ≈ 15/20**
