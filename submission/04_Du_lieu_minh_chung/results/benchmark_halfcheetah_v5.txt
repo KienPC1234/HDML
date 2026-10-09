@@ -1,0 +1,48 @@
+2026-08-18 08:56:26,908 [INFO] __main__: Execution hardware: cuda
+2026-08-18 08:56:27,066 [INFO] __main__: Loading trained HDML checkpoint: checkpoints/halfcheetah_v5/best_model.pt
+2026-08-18 08:56:27,128 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/halfcheetah_v5/baselines/diffusion_best.pt
+2026-08-18 08:56:27,157 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/halfcheetah_v5/baselines/dt_best.pt
+2026-08-18 08:56:27,166 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/halfcheetah_v5/baselines/iql_best.pt
+2026-08-18 08:56:27,197 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/halfcheetah_v5/baselines/rnn_best.pt
+2026-08-18 08:56:27,200 [INFO] __main__: Loaded trained baseline checkpoint: checkpoints/halfcheetah_v5/baselines/mlp_best.pt
+2026-08-18 08:56:27,200 [INFO] __main__: Running Standard Benchmark on: HDML (Decision Mamba + Liquid CfC - Ours)...
+2026-08-18 08:56:46,660 [INFO] __main__: Running Perturbation Benchmark on: HDML (Decision Mamba + Liquid CfC - Ours)...
+2026-08-18 08:57:06,058 [INFO] __main__: Running Standard Benchmark on: Diffusion Policy (DDPM 10-step Denoising)...
+2026-08-18 08:57:45,662 [INFO] __main__: Running Perturbation Benchmark on: Diffusion Policy (DDPM 10-step Denoising)...
+2026-08-18 08:58:25,161 [INFO] __main__: Running Standard Benchmark on: Decision Transformer (Causal Attention DT)...
+2026-08-18 08:58:40,543 [INFO] __main__: Running Perturbation Benchmark on: Decision Transformer (Causal Attention DT)...
+2026-08-18 08:58:55,897 [INFO] __main__: Running Standard Benchmark on: Implicit Q-Learning (IQL / Value-Advantage)...
+2026-08-18 08:59:00,014 [INFO] __main__: Running Perturbation Benchmark on: Implicit Q-Learning (IQL / Value-Advantage)...
+2026-08-18 08:59:04,562 [INFO] __main__: Running Standard Benchmark on: Decision RNN (LSTM Recurrent Policy)...
+2026-08-18 08:59:13,528 [INFO] __main__: Running Perturbation Benchmark on: Decision RNN (LSTM Recurrent Policy)...
+2026-08-18 08:59:22,451 [INFO] __main__: Running Standard Benchmark on: MLP-BC (Standard Feedforward Reactive)...
+2026-08-18 08:59:27,145 [INFO] __main__: Running Perturbation Benchmark on: MLP-BC (Standard Feedforward Reactive)...
+
+===================================================================================================================
+ACADEMIC SOTA BENCHMARK COMPARISON ON HALFCHEETAH-V5 (Standard & Perturbed Robustness)
+===================================================================================================================
+
+-------------------------------------------------------------------------------------------------------------------
+Architecture / Paradigm                      | Params    | Frequency (Hz) | Latency (ms) | Jerk (Smooth)  | D4RL Score
+-------------------------------------------------------------------------------------------------------------------
+HDML (Decision Mamba + Liquid CfC - Ours)    | 995,367   | 310.8          | 3.217        | 0.6962         | 1.61      
+Diffusion Policy (DDPM 10-step Denoising)    | 153,606   | 138.9          | 7.198        | 0.1950         | 2.26      
+Decision Transformer (Causal Attention DT)   | 1,206,918 | 407.3          | 2.455        | 0.6942         | 1.14      
+Implicit Q-Learning (IQL / Value-Advantage)  | 286,985   | 3466.2         | 0.288        | 0.6847         | 1.47      
+Decision RNN (LSTM Recurrent Policy)         | 1,008,390 | 867.5          | 1.153        | 0.6943         | 1.54      
+MLP-BC (Standard Feedforward Reactive)       | 72,198    | 2648.7         | 0.378        | 0.5796         | -0.88     
+-------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------
+PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)
+-------------------------------------------------------------------------------------------------------------------
+Architecture / Paradigm                      | Raw Return           | D4RL Score   | Jerk (Smooth)  | Survival %
+-------------------------------------------------------------------------------------------------------------------
+HDML (Decision Mamba + Liquid CfC - Ours)    | -91.52 +/- 54.50     | 1.52         | 0.6952         | 100.0     %
+Diffusion Policy (DDPM 10-step Denoising)    | 0.92 +/- 10.64       | 2.26         | 0.2284         | 100.0     %
+Decision Transformer (Causal Attention DT)   | -74.48 +/- 42.06     | 1.66         | 0.6926         | 100.0     %
+Implicit Q-Learning (IQL / Value-Advantage)  | -172.11 +/- 76.47    | 0.87         | 0.6747         | 100.0     %
+Decision RNN (LSTM Recurrent Policy)         | -94.90 +/- 26.72     | 1.49         | 0.6925         | 100.0     %
+MLP-BC (Standard Feedforward Reactive)       | -128.43 +/- 52.50    | 1.22         | 0.5902         | 100.0     %
+-------------------------------------------------------------------------------------------------------------------
+
