@@ -97,15 +97,19 @@ class HDMLDeploymentWrapper(nn.Module):
                 if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
                     block.mamba = PurePyTorchMamba(block.mamba)
                 elif isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
+                    if isinstance(block.mamba, PortableMamba3):
+                        continue
                     nat = block.mamba
-                    rope_fraction = 2.0 / nat.rotary_dim_divisor
+                    rope_fraction = getattr(block, "rope_fraction", 0.5)
+                    dev = next(nat.parameters()).device
+                    dt = next(nat.parameters()).dtype
                     port = PortableMamba3(
                         d_model=nat.d_model,
                         d_state=nat.d_state,
                         expand=nat.expand,
                         headdim=nat.headdim,
                         rope_fraction=rope_fraction,
-                    )
+                    ).to(device=dev, dtype=dt)
                     port.load_state_dict(nat.state_dict())
                     block.mamba = port
 
