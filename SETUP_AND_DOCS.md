@@ -73,5 +73,4 @@ python scripts/measure_closed_loop.py \
 - [REPRODUCIBILITY.md](REPRODUCIBILITY.md): Protocol for verifying and reproducing benchmark results.
 - [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md): Detailed rebuild log, architectural audit, and run artifacts.
 - [docs/AI_ASSISTANCE.md](docs/AI_ASSISTANCE.md): Disclosure of AI-assisted engineering and administrative tasks.
-- [paper/](paper/): Academic manuscript source (`main.tex`), compiled paper (`main.pdf`), and figures.
-- [submission/](submission/): Complete anonymous competition submission package.
+- [ke_hoach_nghien_cuu_latex/](ke_hoach_nghien_cuu_latex/), [tom_tat_du_an_latex/](tom_tat_du_an_latex/), [khai_bao_ai_latex/](khai_bao_ai_latex/): Competition documents (research plan, project summary, AI declaration).
