@@ -112,7 +112,8 @@ def main() -> None:
     data_path = Path(args.dataset)
     if not data_path.exists():
         raise FileNotFoundError(
-            f"Dataset not found at {data_path}. Run `python scripts/collect_data.py` first."
+            f"Dataset not found at {data_path}. Run the matching collector first "
+            f"(e.g. scripts/collect_foundation_data.py or scripts/collect_unitree_a1.py)."
         )
 
     trajectories = TrajectoryCollector.load_dataset(data_path)

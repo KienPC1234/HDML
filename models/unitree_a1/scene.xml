@@ -16,7 +16,7 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <camera name="track" mode="trackcom" pos="1.4 -1.6 0.7" xyaxes="0.75 0.65 0.0 -0.25 0.30 0.92"/>
+    <camera name="track" mode="trackcom" pos="1.05 -1.20 0.53" xyaxes="0.75 0.65 0.0 -0.25 0.30 0.92"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
   </worldbody>
 </mujoco>

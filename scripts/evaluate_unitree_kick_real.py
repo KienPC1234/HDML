@@ -154,6 +154,8 @@ def main() -> None:
     ap.add_argument("--forces", type=float, nargs="+", default=[50, 100, 200, 400])
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--kick-step", type=int, default=200)
+    ap.add_argument("--capture-force", type=float, default=200.0,
+                    help="Force level whose HDML episode is rendered into the frame strip")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--output", default="results/unitree_kick_real.json")
     ap.add_argument("--frames-out", default="KH_thi_KHKT_TP_2026-2027/Bao_cao_du_an_LaTeX/figures/unitree_kick_frames")
@@ -168,7 +170,7 @@ def main() -> None:
 
     max_steps = int(cfg.env.max_episode_steps)
     # Frames captured around the kick for the first HDML episode at the lowest force.
-    capture = {int(args.kick_step) - 4, int(args.kick_step), int(args.kick_step) + 5, int(args.kick_step) + 25}
+    capture = {int(args.kick_step) - 4, int(args.kick_step), int(args.kick_step) + 17, int(args.kick_step) + 100}
     frames_dir = Path(args.frames_out)
     frames_dir.mkdir(parents=True, exist_ok=True)
 
@@ -177,7 +179,7 @@ def main() -> None:
         for force in args.forces:
             eps = []
             for i in range(args.episodes):
-                do_capture = (mtype == "hdml" and force == args.forces[0] and i == 0)
+                do_capture = (mtype == "hdml" and force == args.capture_force and i == 0)
                 ep = run_episode(
                     model, mtype, cfg, device, sm, ss, force,
                     args.kick_step, 42 + i, max_steps,

@@ -31,12 +31,12 @@ FRAMES = ROOT / "KH_thi_KHKT_TP_2026-2027" / "Bao_cao_du_an_LaTeX" / "figures" /
 OUT_PNG = ROOT / "KH_thi_KHKT_TP_2026-2027" / "Bao_cao_du_an_LaTeX" / "figures" / "unitree_a1_kick_recovery_real.png"
 OUT_PDF = OUT_PNG.with_suffix(".pdf")
 
-FRAME_STEPS = [196, 200, 205, 225]
+FRAME_STEPS = [196, 200, 217, 300]
 FRAME_LABELS = [
     "(a) Trước va chạm\n(dáng đi định mức)",
     "(b) Thời điểm va chạm\n(xung lực ngang)",
-    "(c) $+0{,}1$ giây\n(hồi phục)",
-    "(d) $+0{,}5$ giây\n(chạy ổn định)",
+    "(c) $+0{,}34$ giây\n(lệch đỉnh $28{,}2^\\circ$)",
+    "(d) $+2{,}0$ giây\n(hồi phục, $\\phi<1^\\circ$)",
 ]
 DT_COLOR = "#dc2626"
 HDML_COLOR = "#1d4ed8"
@@ -58,14 +58,18 @@ def main() -> None:
     fig = plt.figure(figsize=(15.0, 6.6), dpi=250)
     gs = gridspec.GridSpec(2, 3, height_ratios=[1.05, 0.95], hspace=0.32, wspace=0.24)
 
-    # ---- Top: real frames (4 columns) ----
+    # ---- Top: real frames (4 columns), cropped to keep the robot large ----
+    # Fixed crop window (same for all frames so the strip does not jitter):
+    # the quadruped occupies roughly x in [270, 645], y in [0, 250] of the
+    # 960x720 render; this window frames it with a small margin.
+    crop = (170, 0, 780, 400)  # left, top, right, bottom
     gs_top = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[0, :], wspace=0.04)
     for idx, (step, label) in enumerate(zip(FRAME_STEPS, FRAME_LABELS)):
         ax = fig.add_subplot(gs_top[0, idx])
-        fp = FRAMES / f"hdml_f50_t{step:04d}.png"
+        fp = FRAMES / f"hdml_f200_t{step:04d}.png"
         if fp.exists():
-            im = np.asarray(Image.open(fp))
-            ax.imshow(im)
+            im = Image.open(fp).convert("RGB").crop(crop)
+            ax.imshow(np.asarray(im))
         else:
             ax.text(0.5, 0.5, "missing", ha="center", va="center")
         ax.set_title(label, fontsize=9.6, fontweight="bold", pad=5, color="#111827")
