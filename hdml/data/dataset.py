@@ -66,6 +66,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         all_mask_list: list[np.ndarray] = []
         all_reward_chunks_list: list[np.ndarray] = []
         all_next_states_list: list[np.ndarray] = []
+        all_next_rtgs_list: list[np.ndarray] = []
 
         for traj in self.trajectories:
             raw_states = (traj["observations"].astype(np.float32) - self.state_mean) / self.state_std
@@ -121,6 +122,14 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             pad_ns = np.pad(next_state_arr, ((0, k), (0, 0)), mode="constant")
             next_states = np.lib.stride_tricks.sliding_window_view(pad_ns, (k, self.prop_dim))[:traj_len, 0, :, :]
 
+            # Next RTG after the action chunk: RTG[t+c] (for the k-step Q-target
+            # RTG[t] = R_c[t] + gamma^c * RTG[t+c]).
+            next_rtg_arr = np.zeros_like(raw_rtgs, dtype=np.float32)
+            if traj_len > c:
+                next_rtg_arr[: traj_len - c] = raw_rtgs[c:]
+            pad_nrtg = np.pad(next_rtg_arr, ((0, k), (0, 0)), mode="constant")
+            next_rtgs = np.lib.stride_tricks.sliding_window_view(pad_nrtg, (k, 1))[:traj_len, 0, :, :]
+
             # Vectorized mask construction
             steps_remaining = np.maximum(0, np.minimum(k, traj_len - np.arange(traj_len)))
             col_indices = np.arange(k)
@@ -136,6 +145,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             all_mask_list.append(masks[::st])
             all_reward_chunks_list.append(reward_chunks[::st])
             all_next_states_list.append(next_states[::st])
+            all_next_rtgs_list.append(next_rtgs[::st])
 
         states_buf = np.ascontiguousarray(np.concatenate(all_states_list, axis=0), dtype=np.float32)
         actions_buf = np.ascontiguousarray(np.concatenate(all_actions_list, axis=0), dtype=np.float32)
@@ -146,6 +156,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         mask_buf = np.ascontiguousarray(np.concatenate(all_mask_list, axis=0), dtype=np.float32)
         reward_chunks_buf = np.ascontiguousarray(np.concatenate(all_reward_chunks_list, axis=0), dtype=np.float32)
         next_states_buf = np.ascontiguousarray(np.concatenate(all_next_states_list, axis=0), dtype=np.float32)
+        next_rtgs_buf = np.ascontiguousarray(np.concatenate(all_next_rtgs_list, axis=0), dtype=np.float32)
 
         self.states = torch.from_numpy(states_buf)
         self.actions = torch.from_numpy(actions_buf)
@@ -159,6 +170,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self.target_rtgs = self.rtgs.clone()
         self.reward_chunks = torch.from_numpy(reward_chunks_buf)
         self.next_states = torch.from_numpy(next_states_buf)
+        self.target_next_rtgs = torch.from_numpy(next_rtgs_buf)
 
         total_samples = self.states.shape[0]
         logger.info(
@@ -179,6 +191,7 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             "target_actions": self.target_actions[index],
             "target_chunks": self.target_chunks[index],
             "target_rtgs": self.target_rtgs[index],
+            "target_next_rtgs": self.target_next_rtgs[index],
             "reward_chunks": self.reward_chunks[index],
             "next_states": self.next_states[index],
         }
@@ -191,13 +204,19 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self,
         trajectories: Sequence[dict[str, np.ndarray]],
         context_length: int = 20,
+        chunk_size: int = 4,
         scale_return: float = 1000.0,
         state_mean: np.ndarray | None = None,
         state_std: np.ndarray | None = None,
+        gamma: float = 0.99,
+        stride: int = 1,
     ) -> None:
         super().__init__()
         self.context_length = context_length
+        self.chunk_size = chunk_size
         self.scale_return = scale_return
+        self.gamma = gamma
+        self.stride = stride
         self.trajectories = list(trajectories)
 
         if len(self.trajectories) == 0:
@@ -220,7 +239,7 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         self.indices: list[tuple[int, int]] = []
         for traj_idx, traj in enumerate(self.trajectories):
             traj_len = len(traj["observations"])
-            for t in range(traj_len):
+            for t in range(0, traj_len, self.stride):
                 self.indices.append((traj_idx, t))
 
     def __len__(self) -> int:
@@ -269,13 +288,41 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
         target_actions = np.zeros((k, self.action_dim), dtype=np.float32)
         target_actions[:actual_len] = raw_actions
 
-        # Action-chunk target for the HiQC critic / flow policy: next `c` actions.
-        c = getattr(self, "chunk_size", 1)
+        # Action-chunk target for the HiQC critic / flow policy.
+        # Same convention as FastTensor: chunk at position j starts at the
+        # CURRENT action a_{start+j} (not a_{start+j+1}).
+        c = int(self.chunk_size)
         target_chunks = np.zeros((k, c, self.action_dim), dtype=np.float32)
         for j in range(actual_len):
-            end = min(start_t + j + 1 + c, traj_len)
-            chunk = traj["actions"][start_t + j + 1 : end]
+            end = min(start_t + j + c, traj_len)
+            chunk = traj["actions"][start_t + j : end]
             target_chunks[j, : len(chunk)] = chunk
+
+        # Per-step scaled rewards for the c-step sum R_c[t].
+        if "rewards" in traj:
+            _rew = np.asarray(traj["rewards"], dtype=np.float32) / self.scale_return
+        else:
+            _rtg_full = np.asarray(traj["returns_to_go"], dtype=np.float32)
+            _rew = np.zeros_like(_rtg_full, dtype=np.float32)
+            _rew[:-1] = _rtg_full[:-1] - self.gamma * _rtg_full[1:]
+            _rew[-1] = _rtg_full[-1]
+            _rew = _rew / self.scale_return
+        # R_c windows, s_{t+c} windows, RTG[t+c] windows for this context.
+        reward_chunks = np.zeros((k, 1), dtype=np.float32)
+        next_states = np.zeros((k, self.prop_dim), dtype=np.float32)
+        next_rtgs = np.zeros((k, 1), dtype=np.float32)
+        _full_states = (np.asarray(traj["observations"], dtype=np.float32) - self.state_mean) / self.state_std
+        _full_rtgs = (np.asarray(traj["returns_to_go"], dtype=np.float32) / self.scale_return).reshape(-1, 1)
+        for j in range(actual_len):
+            t_abs = start_t + j
+            rc = 0.0
+            for m in range(c):
+                if t_abs + m < traj_len:
+                    rc += (self.gamma ** m) * float(_rew[t_abs + m])
+            reward_chunks[j, 0] = rc
+            if t_abs + c < traj_len:
+                next_states[j] = _full_states[t_abs + c]
+                next_rtgs[j, 0] = float(_full_rtgs[t_abs + c, 0])
 
         return {
             "states": torch.from_numpy(padded_states),
@@ -286,8 +333,9 @@ class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
             "target_actions": torch.from_numpy(target_actions),
             "target_chunks": torch.from_numpy(target_chunks),
             "target_rtgs": torch.from_numpy(padded_rtgs.copy()),
-            "reward_chunks": torch.from_numpy(padded_rtgs.copy()),
-            "next_states": torch.from_numpy(padded_states.copy()),
+            "target_next_rtgs": torch.from_numpy(next_rtgs),
+            "reward_chunks": torch.from_numpy(reward_chunks),
+            "next_states": torch.from_numpy(next_states),
         }
 
 

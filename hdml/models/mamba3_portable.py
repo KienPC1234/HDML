@@ -176,6 +176,8 @@ class PortableMamba3(nn.Module):
         # s[b,i,j,h] = (q_i · k_scaled_j) * exp(da_cs_i - da_cs_j) for j < i
         qk = torch.einsum("blhd,bmhd->blmh", q, k_scaled)      # (b,l,l,nheads)
         decay = da_cs.unsqueeze(2) - da_cs.unsqueeze(1)        # (b,l,l,nheads)
+        # Clamp the exponent: adt>0 or long L otherwise gives exp(+large)=Inf/NaN.
+        decay = torch.clamp(decay, min=-50.0, max=10.0)
         causal = torch.tril(torch.ones(l, l, device=u.device, dtype=torch.bool), diagonal=-1)
         s = qk * torch.exp(decay) * causal.unsqueeze(0).unsqueeze(-1)
         o = torch.einsum("blmh,bmhd->blhd", s, x)             # (b,l,nheads,headdim)

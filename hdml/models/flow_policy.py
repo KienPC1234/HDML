@@ -95,18 +95,25 @@ class FlowPolicy(nn.Module):
                  action chunk as `pred_velocity + a_0` for Grad-CAPS regularization).
         """
         a_0 = torch.randn_like(a_1)
-        
-        # Sample random tau ~ U(0, 1)
+
+        # Sample random tau ~ U(0, 1), matching a_1 dtype to survive AMP/float64.
         if a_1.ndim == 4:
             B, T, C, D = a_1.shape
-            tau = torch.rand((B, T, 1), device=a_1.device)
+            tau = torch.rand((B, T, 1), device=a_1.device, dtype=a_1.dtype)
+            tau_expanded = tau.unsqueeze(-1)  # (B, T, 1, 1) broadcasts to (B, T, C, D)
+        elif a_1.ndim == 3:
+            B = a_1.shape[0]
+            tau = torch.rand((B, 1), device=a_1.device, dtype=a_1.dtype)
+            # (B, 1) -> (B, 1, 1) broadcasts to (B, C, D)
+            tau_expanded = tau.unsqueeze(-1)
+        elif a_1.ndim == 2:
+            B = a_1.shape[0]
+            tau = torch.rand((B, 1), device=a_1.device, dtype=a_1.dtype)
+            tau_expanded = tau  # (B, 1) broadcasts to (B, chunk_dim)
         else:
             B = a_1.shape[0]
-            tau = torch.rand((B, 1), device=a_1.device)
-            
-        # Interpolate a_tau
-        # Expand tau to match a_1 dims
-        tau_expanded = tau.unsqueeze(-1) if a_1.ndim == 4 else tau.unsqueeze(-1)
+            tau = torch.rand((B, 1), device=a_1.device, dtype=a_1.dtype)
+            tau_expanded = tau
         
         a_tau = tau_expanded * a_1 + (1.0 - tau_expanded) * a_0
         target_velocity = a_1 - a_0
@@ -115,18 +122,23 @@ class FlowPolicy(nn.Module):
         
         return target_velocity, pred_velocity, a_0
         
-    @torch.inference_mode()
     def sample(self, context: torch.Tensor, num_steps: int = 1) -> torch.Tensor:
-        """
-        Sample action chunks using Euler integration.
-        
+        """Sample action chunks using Euler integration.
+
+        NOTE: no @inference_mode here on purpose. Callers that need no-grad
+        (get_action/act_from_subgoal/eval) already run under inference_mode;
+        decorating this method would block gradients when the trainer calls it
+        with deterministic=False.
+
         Args:
             context: (B, context_dim)
             num_steps: Number of integration steps (1 to 4 is recommended)
-            
+
         Returns:
             a_1: Sampled action chunk (B, chunk_size, action_dim)
         """
+        if num_steps <= 0:
+            raise ValueError(f"num_steps must be > 0, got {num_steps}")
         B = context.shape[0]
         a_tau = torch.randn(
             (B, self.chunk_size, self.action_dim), device=context.device, dtype=context.dtype
@@ -156,6 +168,8 @@ class FlowPolicy(nn.Module):
         Returns:
             Action chunk (B, chunk_size, action_dim).
         """
+        if num_steps <= 0:
+            raise ValueError(f"num_steps must be > 0, got {num_steps}")
         B = context.shape[0]
         a_tau = torch.zeros((B, self.chunk_size, self.action_dim), device=context.device, dtype=context.dtype)
         dt = 1.0 / num_steps
@@ -226,11 +240,14 @@ class GaussianActionPolicy(nn.Module):
             mu = mu_flat
         return a_1, mu, None
 
-    @torch.inference_mode()
     def sample(
         self, context: torch.Tensor, num_steps: int = 1, stochastic: bool = False
     ) -> torch.Tensor:
         """Return the deterministic action chunk (or a low-variance sample).
+
+        NOTE: no @inference_mode decorator — the trainer calls this in a
+        grad-enabled forward when action_policy="gaussian". Eval callers already
+        run under inference_mode.
 
         Args:
             context: (B, context_dim).
