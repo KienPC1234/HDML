@@ -121,6 +121,38 @@ def main() -> None:
         torch.cuda.empty_cache()
 
     mean_cycle = float(statistics.fmean(cycle_ms))
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    # --- 3. Portable CPU deployment path (Mamba-1 + RoPE + flow + CfC). ---
+    cpu_inference_ms = None
+    try:
+        from hdml.deployment.onnx_exporter import HDMLDeploymentWrapper
+        portable = HDMLModel(
+            prop_dim=cfg.model.prop_dim, action_dim=cfg.model.action_dim,
+            d_model=cfg.model.d_model, num_mamba_layers=cfg.model.num_mamba_layers,
+            d_subgoal=cfg.model.d_subgoal, chunk_size=cfg.model.chunk_size,
+            use_native_mamba3=False,
+        ).cpu().eval()
+        portable.deterministic = True
+        portable.num_flow_steps = 4
+        wrapper = HDMLDeploymentWrapper(portable).eval()
+        ps = torch.randn(1, ctx, cfg.model.prop_dim)
+        pr = torch.randn(1, ctx, 1)
+        pa = torch.randn(1, ctx, cfg.model.action_dim)
+        pt = torch.arange(ctx).unsqueeze(0)
+        import time as _time
+        with torch.inference_mode():
+            for _ in range(10):
+                wrapper(ps, pr, pa, pt)
+            t0 = _time.perf_counter()
+            for _ in range(100):
+                wrapper(ps, pr, pa, pt)
+            cpu_inference_ms = (_time.perf_counter() - t0) / 100 * 1000.0
+        logger.info("CPU portable inference: %.2f ms (%.1f Hz)", cpu_inference_ms, 1000.0 / cpu_inference_ms)
+    except Exception as exc:  # noqa: BLE001 - CPU path is optional
+        logger.warning("CPU portable measurement skipped: %s", exc)
+
     record = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "config": args.config,
@@ -132,11 +164,12 @@ def main() -> None:
         "pure_inference_hz": latency["throughput_hz"],
         "closed_loop_cycle_ms": mean_cycle,
         "closed_loop_hz": 1000.0 / mean_cycle if mean_cycle > 0 else 0.0,
+        "cpu_portable_inference_ms": cpu_inference_ms,
+        "cpu_portable_inference_hz": (1000.0 / cpu_inference_ms) if cpu_inference_ms else None,
         "cycle_samples": len(cycle_ms),
-        "note": "closed-loop includes sensor read, normalisation, model inference and env physics step",
+        "note": "closed-loop includes sensor read, normalisation, model inference and env physics step; "
+                "cpu path is the portable Mamba-1 deployment wrapper",
     }
-    out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(record, indent=2), encoding="utf-8")
     logger.info(
         "Closed-loop: %.3f ms (%.1f Hz). Written to %s",
