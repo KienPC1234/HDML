@@ -50,13 +50,19 @@ def compute_action_smoothness(actions: np.ndarray | torch.Tensor) -> float:
     else:
         actions_np = np.asarray(actions)
 
-    if actions_np.shape[0] < 3:
-        return 0.0
-
-    # First difference: acceleration / velocity change
-    first_diff = np.diff(actions_np, axis=0)
-    # Second difference: jerk / rate of acceleration change
-    second_diff = np.diff(first_diff, axis=0)
+    # Support (T, D) and (B, T, D); differentiate along the time axis.
+    if actions_np.ndim == 3:
+        if actions_np.shape[1] < 3:
+            return 0.0
+        first_diff = np.diff(actions_np, axis=1)
+        second_diff = np.diff(first_diff, axis=1)
+    else:
+        if actions_np.shape[0] < 3:
+            return 0.0
+        # First difference: acceleration / velocity change
+        first_diff = np.diff(actions_np, axis=0)
+        # Second difference: jerk / rate of acceleration change
+        second_diff = np.diff(first_diff, axis=0)
 
     return float(np.mean(np.abs(second_diff)))
 
@@ -75,10 +81,14 @@ def compute_action_rate_of_change(actions: np.ndarray | torch.Tensor) -> float:
     else:
         actions_np = np.asarray(actions)
 
-    if actions_np.shape[0] < 2:
-        return 0.0
-
-    first_diff = np.diff(actions_np, axis=0)
+    if actions_np.ndim == 3:
+        if actions_np.shape[1] < 2:
+            return 0.0
+        first_diff = np.diff(actions_np, axis=1)
+    else:
+        if actions_np.shape[0] < 2:
+            return 0.0
+        first_diff = np.diff(actions_np, axis=0)
     return float(np.mean(np.abs(first_diff)))
 
 
@@ -88,6 +98,7 @@ def benchmark_inference_latency(
     num_warmup: int = 20,
     num_iterations: int = 100,
     device: torch.device | str = "cuda",
+    batch_size: int = 1,
 ) -> dict[str, float]:
     """Benchmark inference latency (mean, std, min, max, throughput) on the target device.
 
@@ -135,7 +146,8 @@ def benchmark_inference_latency(
     std_lat = float(np.std(latencies_arr))
     min_lat = float(np.min(latencies_arr))
     max_lat = float(np.max(latencies_arr))
-    throughput_hz = float(1000.0 / mean_lat) if mean_lat > 0 else 0.0
+    # Throughput in samples/s: scale per-call rate by batch size.
+    throughput_hz = float(batch_size * 1000.0 / mean_lat) if mean_lat > 0 else 0.0
 
     return {
         "mean_latency_ms": mean_lat,

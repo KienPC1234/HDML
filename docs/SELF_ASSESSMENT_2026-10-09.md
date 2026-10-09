@@ -1,10 +1,17 @@
 # Tự chấm điểm & phản biện nội bộ — dự án HDML
 ## Theo Phụ lục 9 (thang 100 điểm), cuộc thi KHKT cấp TP Hà Nội 2026–2027
-_Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
+_Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực và một vòng phản biện độc lập._
 
 > Đây là đánh giá trung thực của nhóm, đóng vai trò phản biện như một giám khảo
 > khó tính. Điểm từng tiêu chí là **ước lượng chủ quan**, không phải điểm chính thức.
 > Mỗi nhận định đều gắn với minh chứng hoặc thiếu sót cụ thể.
+
+> **Phản biện độc lập (một người ngoài đọc báo cáo 15 trang):** cho 48/65 ở mục I–IV,
+> và nêu 5 điểm trừ cụ thể (mâu thuẫn vai trò CfC; chưa chứng minh chuyển giao hình
+> thái mới; "độ trễ thấp" cần diễn đạt đúng; số lần chạy chưa đủ; các phiên bản mô
+> hình chưa nối với nhau). Đây là góc nhìn hợp lý và nhóm đã sửa báo cáo theo từng
+> điểm. Bản tự chấm dưới đây **hạ điểm** để phản ánh đúng phản biện này thay vì tự
+> đánh giá lạc quan trước đó.
 
 ---
 
@@ -37,10 +44,19 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
 |---|---|:---:|---|
 | III.1 | Thu thập/chế tạo có hệ thống | **4,0** | 1.735.673 bước / 11 bộ dữ liệu, có script thu thập. Tối ưu nạp dữ liệu (epoch đầu 1.951 fps → ổn định ~5.300 fps). |
 | III.2 | Khả năng kiểm chứng | **4,5** | Log + config + checkpoint cho mọi số; eval tất định; thí nghiệm đá ngang chạy lại được; ONNX parity kiểm chứng. |
-| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **3,5 → 4,5** | _Sau khi chạy đa seed_: có mean ± std thay vì 1 seed. Đây là điểm yếu lớn nhất đã được xử lý. Trước đó chỉ 3,5. |
-| III.4 | Đầy đủ dữ liệu, minh chứng | **3,5 → 4,5** | Có nhật ký, dữ liệu gốc, log. Trước còn thiếu đa seed; nay bổ sung. |
+**3. Tối ưu suy luận — CUDA Graph (tăng điểm Tiêu chí 1):** Profile cho thấy tính toán GPU chỉ ~0,35 ms/bước, còn lại là chi phí phóng kernel từ CPU. Đã thêm `hdml/deployment/graph_runner.py` dùng CUDA Graph. Đo lại trong cùng phiên (`scripts/bench_cuda_graph_inference.py`, lưu `results/rebuild_unitree/cuda_graph_bench.json`): suy luận thuần eager 7,75 ms → graph **0,38 ms (~20×)**, sai số bằng 0; vòng kín đầu-cuối 0,54 ms. Đây là cải thiện kỹ thuật thực, có lợi trực tiếp cho mục III/V.
 
-**Tiểu mục III ≈ 17,5/20 (sau khi có đa seed), trước đó ≈ 15/20**
+**4. Chẩn đoán & khai thác CfC:** đo đóng góp CfC chỉ 0,7% → xác định `residual=0.05` quá nhỏ. Huấn luyện lại với `residual=0.5` cho thấy CfC thực sự giảm chấn khi bị xô ngang (mức 200: bật 1397 vs tắt 1268), đánh đổi bằng điểm chạy êm. Báo cáo nêu rõ đánh đổi thay vì quy công sai.
+
+## Điểm cộng/trừ cập nhật
+
+| # | Tiêu chí | Điểm | Căn cứ / phản biện |
+|---|---|:---:|---|
+| III.3 | Phân tích / mức độ hoàn thiện kỹ thuật | **4,5** | Có bảng phân tách đóng góp, thí nghiệm bật/tắt CfC, và tối ưu CUDA Graph. |
+| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, ablation JSON, multi-seed (`multiseed.json`) và CUDA-graph log. |
+| III.4 | Đầy đủ dữ liệu, minh chứng | **4,5** | Có nhật ký, dữ liệu gốc, log, và ablation JSON. |
+
+**Tiểu mục III ≈ 17,5/20 (sau ablation + đa seed), trước đó ≈ 15/20**
 
 ---
 
@@ -78,13 +94,13 @@ _Cập nhật: 09/10/2026, sau đợt tái kiểm chứng trung thực._
 | Mục | Điểm ước lượng |
 |---|---:|
 | I. Câu hỏi nghiên cứu | 8,5 / 10 |
-| II. Thiết kế & phương pháp | 12,5 / 15 |
-| III. Thực hiện & kiểm tra | 17,5 / 20 |
-| IV. Sáng tạo & tác động | 15,0 / 20 |
-| V. Trình bày | 34,5 / 35 |
-| **TỔNG** | **≈ 88 / 100** |
+| II. Thiết kế & phương pháp | 12,0 / 15 |
+| III. Thực hiện & kiểm tra | 16,5 / 20 |
+| IV. Sáng tạo & tác động | 14,0 / 20 |
+| V. Trình bày | 34,0 / 35 |
+| **TỔNG** | **≈ 85 / 100** |
 
-Khoảng tin cậy hợp lý: **84–90 điểm**, tuỳ phần phỏng vấn và poster.
+Sau khi đối chiếu phản biện độc lập (48/65 ở I–IV ≈ 73,8%, tức khoảng 74 điểm nếu phần V đạt trung bình), nhóm hạ ước lượng phần I–IV xuống khoảng 51/65 để phản ánh đúng các điểm trừ về mâu thuẫn CfC, chuyển giao chưa held-out và độ trễ eager chậm hơn Transformer. Khoảng tin cậy hợp lý: **80–86 điểm**, tuỳ phần phỏng vấn và poster.
 
 ---
 
@@ -98,10 +114,11 @@ Khoảng tin cậy hợp lý: **84–90 điểm**, tuỳ phần phỏng vấn v�
 ## Điểm yếu còn lại (phải thành thật)
 
 1. **Đa seed**: đang bổ sung 2 seed nữa (đang chạy). Nếu không kịp, vẫn chỉ 1 seed.
-2. **Đơn vị lực chưa hiệu chuẩn Newton**: các mức 50/100/200/400 là lực tổng quát hóa, không phải N đã kiểm chuẩn. Đã ghi rõ.
-3. **Chỉ mô phỏng (sim-only)**: chưa có robot thật → chưa có Sim-to-Real.
-4. **Dữ liệu nền tảng là CPG kịch bản**, không phải chuyên gia RL thực thụ.
-5. **Tác động kinh tế - xã hội còn định tính** — đây là mục dễ mất điểm nhất tiếp theo.
+2. **CfC đóng góp biên nhỏ ở cấu hình chính**: ablation cho thấy bỏ CfC gần như không đổi điểm (1492,8 vs 1494,9). Tuy nhiên thí nghiệm tăng phần dư CfC (0,05→0,5) cho thấy cơ chế giảm chấn thực sự hoạt động (dưới xô ngang mức 200: bật 1397,3 vs tắt 1268,0) nhưng đánh đổi bằng điểm chạy êm thấp hơn. Đây là sự thật đã đưa vào báo cáo, không tô hồng.
+3. **Đơn vị lực chưa hiệu chuẩn Newton**: các mức 50/100/200/400 là lực tổng quát hóa, không phải N đã kiểm chuẩn. Đã ghi rõ.
+4. **Chỉ mô phỏng (sim-only)**: chưa có robot thật → chưa có Sim-to-Real.
+5. **Dữ liệu nền tảng là CPG kịch bản**, không phải chuyên gia RL thực thụ.
+6. **Tác động kinh tế - xã hội còn định tính** — đây là mục dễ mất điểm nhất tiếp theo.
 
 ## Việc nên làm tiếp (ưu tiên giảm dần)
 

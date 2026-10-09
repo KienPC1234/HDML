@@ -242,3 +242,12 @@ results
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+
+# Excluded documents
+paper/
+ke_hoach_nghien_cuu_latex/
+khai_bao_ai_latex/
+poster_assets_from_logs/
+report_khkt_latex/
+tom_tat_du_an_latex/
+KH_thi_KHKT_TP_2026-2027/

@@ -112,7 +112,8 @@ def main() -> None:
     data_path = Path(args.dataset)
     if not data_path.exists():
         raise FileNotFoundError(
-            f"Dataset not found at {data_path}. Run `python scripts/collect_data.py` first."
+            f"Dataset not found at {data_path}. Run the matching collector first "
+            f"(e.g. scripts/collect_foundation_data.py or scripts/collect_unitree_a1.py)."
         )
 
     trajectories = TrajectoryCollector.load_dataset(data_path)
@@ -124,14 +125,20 @@ def main() -> None:
     train_dataset = dataset_cls(
         trajectories=train_trajs,
         context_length=cfg.training.context_length,
+        chunk_size=cfg.model.chunk_size,
         scale_return=cfg.env.scale_return,
+        gamma=cfg.training.gamma,
+        stride=1,
     )
     val_dataset = dataset_cls(
         trajectories=val_trajs,
         context_length=cfg.training.context_length,
+        chunk_size=cfg.model.chunk_size,
         scale_return=cfg.env.scale_return,
         state_mean=train_dataset.state_mean,
         state_std=train_dataset.state_std,
+        gamma=cfg.training.gamma,
+        stride=1,
     ) if val_trajs else None
 
     cfg.model.prop_dim = train_dataset.prop_dim

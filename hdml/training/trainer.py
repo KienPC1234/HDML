@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import time
 from pathlib import Path
 from typing import Any
+import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -38,6 +41,24 @@ class HDMLTrainer:
     ) -> None:
         self.config = config if config is not None else TrainingConfig()
         self.device = torch.device(device)
+        # Deterministic seeding: torch/cuda/numpy/python. DataLoader shuffling
+        # uses an explicit generator below so runs are reproducible.
+        _seed = int(self.config.seed)
+        random.seed(_seed)
+        np.random.seed(_seed)
+        torch.manual_seed(_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(_seed)
+        # GPU throughput knobs that do not change numerics: TF32 + high-precision
+        # matmul + cudnn autotune for fixed input shapes.
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            try:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.backends.cudnn.benchmark = True
+                torch.set_float32_matmul_precision("high")
+            except Exception as e:  # noqa: BLE001 - backend flags must not crash training
+                logger.warning(f"Could not enable TF32/high-precision matmul: {e}")
         self.model = model.to(self.device)
 
         self.train_dataset = train_dataset
@@ -50,6 +71,8 @@ class HDMLTrainer:
         pin_memory = self.config.pin_memory if use_cuda else False
         persistent_workers = (num_workers > 0) and self.config.persistent_workers
         prefetch_factor = self.config.prefetch_factor if num_workers > 0 else None
+        # Seeded generator for reproducible shuffling.
+        self._loader_gen = torch.Generator().manual_seed(_seed)
 
         self.train_loader = DataLoader(
             self.train_dataset,
@@ -59,6 +82,7 @@ class HDMLTrainer:
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
             prefetch_factor=prefetch_factor,
+            generator=self._loader_gen,
         )
 
         if self.val_dataset is not None:
@@ -178,6 +202,15 @@ class HDMLTrainer:
         next_states = batch["next_states"].to(self.device, non_blocking=True)
         target_chunks = batch["target_chunks"].to(self.device, non_blocking=True)
         reward_chunks = batch["reward_chunks"].to(self.device, non_blocking=True)
+        # RTG at t+c for the k-step target. Older checkpoints/datasets may lack
+        # this field; fall back to RTG[t] only to avoid a crash (biased target,
+        # logged once). New datasets must provide "target_next_rtgs".
+        if "target_next_rtgs" in batch:
+            target_next_rtgs = batch["target_next_rtgs"].to(self.device, non_blocking=True)
+        else:
+            if self.current_step == 0:
+                logger.warning("Batch lacks 'target_next_rtgs'; Q-target falls back to RTG[t] (biased). Regenerate dataset.")
+            target_next_rtgs = target_rtgs
 
         valid_tokens = torch.clamp(mask.sum(), min=1.0)
         mask_exp_act = mask.unsqueeze(-1)
@@ -204,12 +237,12 @@ class HDMLTrainer:
         # Predicted action chunk (deterministic reconstruction) for Grad-CAPS.
         pred_chunk = pred_velocity if noise is None else pred_velocity + noise
 
-        # 2. HiQC chunk critic loss toward the discounted c-step reward + return-to-go.
-        #    The bootstrap value is the scaled return-to-go target (Monte-Carlo, no
-        #    second backbone pass), which keeps the critic target cheap to compute.
+        # 2. HiQC chunk critic loss toward the discounted c-step reward + RTG[t+c].
+        #    Correct k-step identity: RTG[t] = R_c[t] + gamma^c * RTG[t+c], so the
+        #    target must bootstrap from the future return, not the current one.
         critic_context = torch.cat([subgoals_pred.detach(), states], dim=-1)
         q1_pred, q2_pred = self.model.hiqc_critic(critic_context, target_chunks)
-        q_target = reward_chunks + (self.config.gamma ** self.model.chunk_size) * target_rtgs
+        q_target = reward_chunks + (self.config.gamma ** self.model.chunk_size) * target_next_rtgs
         q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_exp_act
         q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_exp_act
         q_loss = (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_exp_act.sum() * 2, min=1.0)
@@ -233,13 +266,13 @@ class HDMLTrainer:
         else:
             pave_loss = states.new_zeros(())
 
-        # 5. Grad-CAPS second-order action smoothness on the predicted chunk.
-        if self.config.grad_caps_weight > 0.0 and pred_chunk.shape[1] > 2:
-            accel = pred_chunk[:, 2:] - 2 * pred_chunk[:, 1:-1] + pred_chunk[:, :-2]
-            accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)
-            grad_caps_loss = (accel_norm * mask[:, 2:]).sum() / torch.clamp(
-                mask[:, 2:].sum(), min=1.0
-            )
+        # 5. Grad-CAPS second-order action smoothness *within* the predicted chunk.
+        #    pred_chunk is (B, T, c, D); differentiate along the chunk axis c
+        #    (dim=-2), not the context-time axis. Mask weights per context step.
+        if self.config.grad_caps_weight > 0.0 and pred_chunk.shape[-2] > 2:
+            accel = pred_chunk[:, :, 2:, :] - 2 * pred_chunk[:, :, 1:-1, :] + pred_chunk[:, :, :-2, :]
+            accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T)
+            grad_caps_loss = (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
         else:
             grad_caps_loss = states.new_zeros(())
 
@@ -258,6 +291,16 @@ class HDMLTrainer:
         else:
             subgoal_loss = states.new_zeros(())
 
+        # NOTE: TrainingConfig carries both `value_weight` and legacy
+        # `reg_loss_weight`. Effective coefficient is `reg_loss_weight` to preserve
+        # current training dynamics; a mismatch with `value_weight` is warned once.
+        _v_w = float(getattr(self.config, "value_weight", 1.0))
+        _r_w = float(self.config.reg_loss_weight)
+        if self.current_step == 0 and abs(_v_w - 1.0) > 1e-12 and abs(_v_w - _r_w) > 1e-12:
+            logger.warning(
+                f"value_weight={_v_w} differs from effective reg_loss_weight={_r_w}; "
+                "using reg_loss_weight. Set them equal to silence this."
+            )
         loss = (
             self.config.action_weight * action_loss
             + self.config.flow_weight * flow_loss
@@ -270,7 +313,7 @@ class HDMLTrainer:
         )
         loss_dict = {
             "total_loss": loss.detach(),
-            "action_loss": flow_loss.detach(),
+            "action_loss": action_loss.detach(),
             "flow_loss": flow_loss.detach(),
             "q_loss": q_loss.detach(),
             "value_loss": value_loss.detach(),
@@ -365,11 +408,13 @@ class HDMLTrainer:
                 # loss_dict holds detached GPU tensors; accumulate without host sync.
                 epoch_losses[k] = epoch_losses.get(k, torch.zeros((), device=self.device)) + v
 
-            batch_bar.set_postfix(
-                loss=f"{loss_dict['total_loss'].item():.3f}",
-                act=f"{loss_dict['action_loss'].item():.3f}",
-                lr=f"{lr:.1e}",
-            )
+            # Throttle host-syncing postfix updates: .item() forces a CUDA sync.
+            if (self.current_step % 10 == 0) or (self.current_step < 5):
+                batch_bar.set_postfix(
+                    loss=f"{loss_dict['total_loss'].item():.3f}",
+                    act=f"{loss_dict['action_loss'].item():.3f}",
+                    lr=f"{lr:.1e}",
+                )
 
         t1 = time.perf_counter()
         throughput = float(total_samples / max(1e-5, (t1 - t0)))
@@ -472,7 +517,12 @@ class HDMLTrainer:
         )
         for epoch in epoch_bar:
             train_metrics = self.train_epoch(epoch)
-            val_metrics = self.evaluate()
+            # Respect eval_interval: validation every epoch is 2x work for no gain.
+            # val_metrics={} on skipped epochs keeps best-tracking on train loss.
+            if self.val_loader is not None and (epoch % max(1, self.config.eval_interval) == 0 or epoch == self.config.max_epochs):
+                val_metrics = self.evaluate()
+            else:
+                val_metrics = {}
 
             combined = {**train_metrics, **val_metrics}
             history.append(combined)
