@@ -45,14 +45,20 @@ def main() -> None:
         ax1.text(xi, v + max(ret) * 0.02, f"{v:.0f}", ha="center", fontsize=8.6)
     ax1.grid(True, axis="y", linestyle="--", alpha=0.45)
 
+    # Panel (b): jerk is two orders of magnitude apart across models; a log axis keeps
+    # the small HDML/DT gap visible instead of flattening it against Diffusion Policy.
     ax2.bar(x, jerk, color=["#16a34a"] + ["#cbd5e1"] * (len(names) - 1), width=0.62)
     ax2.set_xticks(x); ax2.set_xticklabels([LABEL[n] for n in names], rotation=18, ha="right", fontsize=9)
-    ax2.set_ylabel(r"Chỉ số rung giật $\mathcal{J}$ (thấp = mượt)", fontsize=10.5, fontweight="bold")
+    ax2.set_ylabel(r"Chỉ số rung giật $\mathcal{J}$ (thang log, thấp = mượt)", fontsize=10.5, fontweight="bold")
     ax2.set_title("Độ mượt mô-men khớp (10 episode)", fontsize=11.5, fontweight="bold")
-    ax2.set_ylim(0, max(jerk) * 1.18)
+    ax2.set_yscale("log")
+    lo = min(jerk) * 0.55
+    hi = max(jerk) * 1.9
+    ax2.set_ylim(lo, hi)
+    ax2.axhline(jerk[0], color="#16a34a", ls=":", lw=1.3)
     for xi, v in zip(x, jerk):
-        ax2.text(xi, v + max(jerk) * 0.02, f"{v:.3f}".replace(".", ","), ha="center", fontsize=8.6)
-    ax2.grid(True, axis="y", linestyle="--", alpha=0.45)
+        ax2.text(xi, v * 1.08, f"{v:.3f}".replace(".", ","), ha="center", fontsize=8.6)
+    ax2.grid(True, axis="y", which="both", linestyle="--", alpha=0.45)
 
     plt.tight_layout()
     OUT_PNG.parent.mkdir(parents=True, exist_ok=True)

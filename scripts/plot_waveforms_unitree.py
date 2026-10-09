@@ -71,8 +71,10 @@ def main() -> None:
     ap.add_argument("--config", default="configs/unitree_a1_aug.yaml")
     ap.add_argument("--hdml-checkpoint", default="checkpoints/rebuild_unitree/unitree_a1/best_model.pt")
     ap.add_argument("--dt-checkpoint", default="checkpoints/rebuild_unitree/unitree_a1/baselines/dt/best_model.pt")
-    ap.add_argument("--steps", type=int, default=240)
-    ap.add_argument("--joint", type=int, default=0)
+    ap.add_argument("--steps", type=int, default=1000)
+    ap.add_argument("--joint", type=int, default=1,
+                    help="Joint index to plot in panel (a); 1,4,7,10 are the four thigh joints")
+    ap.add_argument("--output-json", default="results/rebuild_unitree/waveform_rollout.json")
     ap.add_argument("--output-pdf", default="KH_thi_KHKT_TP_2026-2027/Bao_cao_du_an_LaTeX/figures/action_waveforms_unitree.pdf")
     ap.add_argument("--output-png", default="KH_thi_KHKT_TP_2026-2027/Bao_cao_du_an_LaTeX/figures/action_waveforms_unitree.png")
     args = ap.parse_args()
@@ -97,26 +99,63 @@ def main() -> None:
     da, dja, djm = rollout(dt, "dt", cfg, device, sm, ss, args.steps)
     print(f"HDML jerk={hjm:.4f}  DT jerk={djm:.4f}")
 
+    def _perstep_jerk(a: np.ndarray) -> np.ndarray:
+        """Per-step smoothness: mean over the 12 joints of |Δ²a_t| (matches the report metric)."""
+        d2 = a[2:] - 2 * a[1:-1] + a[:-2]
+        return np.mean(np.abs(d2), axis=1)
+
+    hh, dd = _perstep_jerk(ha), _perstep_jerk(da)
+    import json
+    Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output_json).write_text(json.dumps({
+        "config": args.config,
+        "steps": int(args.steps),
+        "joint": int(args.joint),
+        "hdml_jerk_metric": hjm, "dt_jerk_metric": djm,
+        "hdml_mean_jerk": float(hh.mean()), "dt_mean_jerk": float(dd.mean()),
+        "hdml_median_jerk": float(np.median(hh)), "dt_median_jerk": float(np.median(dd)),
+        "hdml_joint0_amp": float(np.ptp(ha[:, 0])), "dt_joint0_amp": float(np.ptp(da[:, 0])),
+        "hdml_joint1_amp": float(np.ptp(ha[:, 1])), "dt_joint1_amp": float(np.ptp(da[:, 1])),
+        "note": "clean locomotion, no kick; joint indices are 0-based over the 12 actuators",
+    }, indent=2), encoding="utf-8")
+    print("saved", args.output_json)
+
     j = args.joint
     plt.rcParams["font.family"] = "sans-serif"
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Liberation Sans", "sans-serif"]
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7.0), sharex=True, dpi=260)
     t_h = np.arange(len(ha)); t_d = np.arange(len(da))
-    ax1.plot(t_h, ha[:, j], color="#1d4ed8", linewidth=2.4, label="HDML (đề xuất)")
-    ax1.plot(t_d, da[:, j], color="#dc2626", linewidth=1.4, linestyle="--", label="Decision Transformer")
-    ax1.set_ylabel(f"Lệnh mô-men khớp {j}  $a_t \\in [-1,1]$", fontsize=11, fontweight="bold")
+    ax1.plot(t_h, ha[:, j], color="#1d4ed8", linewidth=2.0, label="HDML (đề xuất)")
+    ax1.plot(t_d, da[:, j], color="#dc2626", linewidth=1.2, linestyle="--", label="Decision Transformer")
+    # Zoom to the real signal range instead of the full [-1,1] action box, otherwise a
+    # low-amplitude joint looks flat and the two policies are indistinguishable.
+    lo = float(min(ha[:, j].min(), da[:, j].min()))
+    hi = float(max(ha[:, j].max(), da[:, j].max()))
+    pad = 0.08 * max(hi - lo, 1e-3)
+    ax1.set_ylim(lo - pad, hi + pad)
+    ax1.axhline(0.0, color="#94a3b8", linewidth=0.8, linestyle=":")
+    joint_names = [
+        "FR hip", "FR thigh", "FR calf", "FL hip", "FL thigh", "FL calf",
+        "RR hip", "RR thigh", "RR calf", "RL hip", "RL thigh", "RL calf",
+    ]
+    jlabel = joint_names[j] if 0 <= j < len(joint_names) else f"khớp {j}"
+    ax1.set_ylabel(f"Lệnh mô-men {jlabel}  $a_t$", fontsize=11, fontweight="bold")
     ax1.set_title("Dạng sóng lệnh mô-men trên robot Unitree A1 (đo thật, vòng kín)", fontsize=12.5, fontweight="bold", pad=10)
-    ax1.set_ylim(-1.08, 1.08); ax1.grid(True, linestyle="--", alpha=0.5)
+    ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=9.5, framealpha=0.92)
 
-    ax2.plot(t_h, hja + 1e-9, color="#1d4ed8", linewidth=2.2, label="HDML")
-    ax2.plot(t_d, dja + 1e-9, color="#dc2626", linewidth=1.3, linestyle="--", label="Decision Transformer")
+    ax2.plot(np.arange(len(hh)), hh + 1e-9, color="#1d4ed8", linewidth=0.9, alpha=0.55, label="HDML (tức thời)")
+    ax2.plot(np.arange(len(dd)), dd + 1e-9, color="#dc2626", linewidth=0.8, linestyle="--", alpha=0.55, label="Decision Transformer (tức thời)")
+    ax2.axhline(hh.mean(), color="#1d4ed8", linewidth=2.2,
+                label=f"HDML trung bình = {hh.mean():.4f}".replace(".", ","))
+    ax2.axhline(dd.mean(), color="#dc2626", linewidth=2.2, linestyle="--",
+                label=f"Decision Transformer trung bình = {dd.mean():.4f}".replace(".", ","))
     ax2.set_yscale("log")
     ax2.set_xlabel("Bước điều khiển $t$ (50 Hz)", fontsize=11, fontweight="bold")
-    ax2.set_ylabel(r"Rung giật tức thời $\|\Delta^2 a_t\|^2$", fontsize=11, fontweight="bold")
-    ax2.set_title("Rung giật cơ học tức thời (thang log, càng thấp càng mượt)", fontsize=11.5, fontweight="bold", pad=8)
+    ax2.set_ylabel(r"Rung giật tức thời $\frac{1}{12}\sum_j|\Delta^2 a_{t,j}|$", fontsize=10.5, fontweight="bold")
+    ax2.set_title("Rung giật cơ học trung bình 12 khớp (thang log, càng thấp càng mượt)", fontsize=11.5, fontweight="bold", pad=8)
     ax2.grid(True, which="both", linestyle="--", alpha=0.45)
-    ax2.legend(loc="upper right", fontsize=9.5, framealpha=0.92)
+    ax2.legend(loc="upper right", fontsize=8.4, framealpha=0.92, ncol=1)
 
     plt.tight_layout()
     for p in (args.output_png, args.output_pdf):
