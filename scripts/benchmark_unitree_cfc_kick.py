@@ -53,7 +53,7 @@ def load_cfc_contribution(cfg, device, ck, sm, ss, steps=300):
         tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
         tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
         with torch.inference_mode():
-            _sg, lat, _v, _ns, _fc, executed = h.encode(states=ts, rtgs=tr, actions=ta, timesteps=tt)
+            _sg, lat, _v, _ns, _fc, executed, _hx = h.encode(states=ts, rtgs=tr, actions=ta, timesteps=tt)
             nominal = h._sample_chunk(_fc[:, -1:, :])[:, :, 0, :]  # (B,1,ad)
             nominal = nominal[:, -1, :]
         deltas.append(float((executed[:, -1, :] - nominal).abs().mean().item()))

@@ -105,7 +105,16 @@ class HDMLFoundationModel(nn.Module):
     ) -> None:
         super().__init__()
         self.d_model = d_model
-        self.device = torch.device(device) if isinstance(device, str) else device
+        if isinstance(device, str):
+            device = torch.device(device)
+        if device.type == "cuda" and not torch.cuda.is_available():
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "CUDA unavailable: falling back to CPU for HDMLFoundationModel."
+            )
+            device = torch.device("cpu")
+        self.device = device
+        self.max_embodiments = max_embodiments
         self.cfc_residual = cfc_residual
 
         # 1. Universal Embeddings
@@ -226,6 +235,10 @@ class HDMLFoundationModel(nn.Module):
 
         if rtgs.dim() == 2:
             rtgs = rtgs.unsqueeze(-1)
+        if not 0 <= embodiment_idx < self.max_embodiments:
+            raise ValueError(
+                f"embodiment_idx={embodiment_idx} out of range [0, {self.max_embodiments})"
+            )
 
         # 1. Project through embodiment-specific adapters
         state_feats = adapter.project_state(states)
@@ -234,8 +247,9 @@ class HDMLFoundationModel(nn.Module):
 
         # 2. Add Positional & Embodiment Embeddings
         t_emb = self.timestep_embedding(timesteps.clamp(0, self.timestep_embedding.num_embeddings - 1))
-        emb_id_tensor = torch.full((B, T), embodiment_idx, dtype=torch.int64, device=states.device)
-        emb_token = self.embodiment_embedding(emb_id_tensor)
+        emb_device = self.embodiment_embedding.weight.device
+        emb_id_tensor = torch.full((B, T), embodiment_idx, dtype=torch.int64, device=emb_device)
+        emb_token = self.embodiment_embedding(emb_id_tensor).to(dtype=state_feats.dtype)
 
         state_token = state_feats + t_emb + emb_token
         rtg_token = rtg_feats + t_emb

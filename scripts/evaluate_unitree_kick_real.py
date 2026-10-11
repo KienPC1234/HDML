@@ -90,6 +90,7 @@ def run_episode(
     ht: list[int] = []
     ep_r: list[float] = []
     rolls: list[float] = []
+    acts: list[list[float]] = []
     frames: dict[int, np.ndarray] = {}
     rtg = float(cfg.env.target_return)
     peak = 0.0
@@ -115,6 +116,7 @@ def run_episode(
             env.apply_kick((0.0, float(force), 0.0))
         obs, r, term, trunc, _ = env.step(a)
         ha.append(a)
+        acts.append([round(float(v), 4) for v in a])
         ep_r.append(float(r))
         rtg -= float(r)
         roll = abs(torso_roll(obs))
@@ -122,7 +124,15 @@ def run_episode(
         peak = max(peak, roll)
         alive = t
         if capture_steps and t in capture_steps:
-            frame = env.render()
+            import mujoco
+            cam = mujoco.MjvCamera()
+            cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            cam.lookat[:] = env.data.subtree_com[0]
+            cam.lookat[2] += 0.06
+            cam.distance = 1.60
+            cam.elevation = -22.0
+            cam.azimuth = 135.0
+            frame = env.render(camera=cam)
             if frame is not None:
                 frames[t] = np.asarray(frame)
         if t > kick_step and recovered_at is None and roll < 10.0:
@@ -142,6 +152,7 @@ def run_episode(
         "completion_pct": 100.0 if survived else round(100.0 * (alive + 1) / max_steps, 1),
         "survived_full_episode": survived,
         "rolls": rolls,
+        "actions": acts,
         "_frames": frames,
     }
 
@@ -170,7 +181,7 @@ def main() -> None:
 
     max_steps = int(cfg.env.max_episode_steps)
     # Frames captured around the kick for the first HDML episode at the lowest force.
-    capture = {int(args.kick_step) - 4, int(args.kick_step), int(args.kick_step) + 17, int(args.kick_step) + 100}
+    capture = {int(args.kick_step) - 15, int(args.kick_step) + 8, int(args.kick_step) + 18, int(args.kick_step) + 100}
     frames_dir = Path(args.frames_out)
     frames_dir.mkdir(parents=True, exist_ok=True)
 

@@ -133,7 +133,7 @@ class HDMLDeploymentWrapper(nn.Module):
             subgoal: (Batch, Subgoal_Dim)
             next_state: (Batch, Prop_Dim)
         """
-        subgoals, latent, values, next_states, _, executed = self.model.encode(
+        subgoals, latent, values, next_states, _, executed, _ = self.model.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             action_last_only=True,
         )

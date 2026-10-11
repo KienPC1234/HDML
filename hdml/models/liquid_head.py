@@ -73,9 +73,12 @@ class CfCActionFilter(nn.Module):
             s_repr = state_repr.unsqueeze(1) if state_repr.ndim == 2 else state_repr
         elif actions.ndim == 3:
             if state_repr.ndim == 2:
-                B, C, D = actions.shape
-                flat_actions = actions.view(B, 1, C * D)
-                s_repr = state_repr.unsqueeze(1)
+                # (B, T, D) actions + (B, Ds) state: broadcast the state
+                # across time. The time axis is preserved (no collapsing to
+                # seq-len 1); behaviour on the working 3D+3D path is unchanged.
+                B, T, _ = actions.shape
+                flat_actions = actions
+                s_repr = state_repr.unsqueeze(1).expand(B, T, -1)
             else:
                 flat_actions = actions
                 s_repr = state_repr
@@ -86,6 +89,9 @@ class CfCActionFilter(nn.Module):
         else:
             raise ValueError(f"Unsupported action tensor shape: {actions.shape}")
 
+        # Align floating dtypes without changing the all-float32 working path.
+        if flat_actions.is_floating_point() and s_repr.is_floating_point() and flat_actions.dtype != s_repr.dtype:
+            s_repr = s_repr.to(dtype=flat_actions.dtype)
         cfc_input = torch.cat([flat_actions, s_repr], dim=-1)
         if cfc_input.shape[-1] != self.input_dim:
             raise ValueError(f"CfC input dimension {cfc_input.shape[-1]} != {self.input_dim}")

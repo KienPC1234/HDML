@@ -246,7 +246,7 @@ class TransformerLiquidHeadAblation(nn.Module):
         u_t = self.fusion(states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, visual_frames=visual_frames)
 
         causal_mask = nn.Transformer.generate_square_subsequent_mask(seq_len, device=states.device)
-        h = self.transformer(u_t, mask=causal_mask, is_causal=True)
+        h = self.transformer(u_t, mask=causal_mask)
 
         subgoals = self.subgoal_head(h)
         values_pred = self.value_head(h)

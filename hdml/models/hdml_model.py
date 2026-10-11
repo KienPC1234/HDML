@@ -184,7 +184,7 @@ class HDMLModel(nn.Module):
         hx: torch.Tensor | None = None,
         with_action: bool = True,
         action_last_only: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Shared policy computation for training and inference.
 
         Runs the multi-modal fusion, the Mamba-3 backbone, the flow-matching
@@ -204,6 +204,8 @@ class HDMLModel(nn.Module):
             next_states:     (B, T, prop_dim)
             flow_context:    (B, T, d_subgoal + prop_dim + 1)
             executed_action: (B, T, action_dim) or (B, 1, action_dim) or None
+            next_hx:         Updated CfC hidden state or None (same forward math;
+                previously discarded, now returned for stateful rollouts)
         """
         u_t = self.fusion(
             states=states,
@@ -218,7 +220,7 @@ class HDMLModel(nn.Module):
         flow_context = torch.cat([subgoals, states, rtgs], dim=-1)
 
         if not with_action:
-            return subgoals, latent, values, next_states, flow_context, None
+            return subgoals, latent, values, next_states, flow_context, None, None
 
         if action_last_only:
             fc = flow_context[:, -1:, :]
@@ -229,10 +231,10 @@ class HDMLModel(nn.Module):
         chunk = self._sample_chunk(fc)                    # (B, t, chunk, action_dim)
         nominal = chunk[:, :, 0, :]                       # first step of the chunk
         if self.cfc_filter is not None:
-            executed_action, _ = self.cfc_filter(nominal, lat, hx=hx)
+            executed_action, next_hx = self.cfc_filter(nominal, lat, hx=hx)
         else:
-            executed_action = nominal
-        return subgoals, latent, values, next_states, flow_context, executed_action
+            executed_action, next_hx = nominal, None
+        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx
 
     def _sample_chunk(self, flow_context: torch.Tensor) -> torch.Tensor:
         """Differentiable action-chunk sample -> (B, T, chunk, action_dim).
@@ -286,11 +288,11 @@ class HDMLModel(nn.Module):
             next_states_pred: (B, T, prop_dim)
             next_hx: Updated CfC hidden state | None
         """
-        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred = self.encode(
+        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred, next_hx = self.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx,
         )
-        return actions_pred, subgoals_pred, values_pred, next_states_pred, None
+        return actions_pred, subgoals_pred, values_pred, next_states_pred, next_hx
 
     @torch.inference_mode()
     def get_action(
@@ -305,13 +307,13 @@ class HDMLModel(nn.Module):
         """Step inference for closed-loop rollouts; returns the last-step action."""
         if states.shape[1] > 1 and hx is not None:
             raise ValueError("Overlapping context must use hx=None; otherwise history is replayed twice")
-        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred = self.encode(
+        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred, next_hx = self.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx, action_last_only=True,
         )
         last_action = actions_pred[:, -1, :]
         last_subgoal = subgoals_pred[:, -1, :]
-        return last_action, None, {
+        return last_action, next_hx, {
             "subgoal": last_subgoal,
             "latent": latent_features[:, -1, :],
             "action": last_action,

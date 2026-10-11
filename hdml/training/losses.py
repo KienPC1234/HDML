@@ -173,23 +173,27 @@ class HDMLLoss(nn.Module):
         else:
             pave_loss = torch.tensor(0.0, device=mask.device)
 
-        # --- 5. Grad-CAPS Loss (Action Smoothness on predicted chunk) ---
+        # --- 5. Grad-CAPS Loss (Action Smoothness WITHIN the predicted chunk) ---
+        # Matches HDMLTrainer: pred_chunk is (B, T, c, D); differentiate along
+        # the chunk axis c (dim=-2) with per-context-step mask weighting.
         if self.grad_caps_weight > 0.0 and pred_velocity is not None:
             # Reconstructed predicted action chunk (noise is None for Gaussian head).
             pred_chunk = pred_velocity if noise is None else pred_velocity + noise
-            if pred_chunk.ndim == 4 and pred_chunk.shape[1] > 2:
-                accel = pred_chunk[:, 2:] - 2 * pred_chunk[:, 1:-1] + pred_chunk[:, :-2]  # (B, T-2, c, d)
-                accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T-2)
-                grad_caps_loss = (accel_norm * mask[:, 2:]).sum() / torch.clamp(mask[:, 2:].sum(), min=1.0)
+            if pred_chunk.ndim == 4 and pred_chunk.shape[-2] > 2:
+                accel = pred_chunk[:, :, 2:] - 2 * pred_chunk[:, :, 1:-1] + pred_chunk[:, :, :-2]  # (B, T, c-2, d)
+                accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T)
+                grad_caps_loss = (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
             else:
                 grad_caps_loss = torch.tensor(0.0, device=mask.device)
         else:
             grad_caps_loss = torch.tensor(0.0, device=mask.device)
 
         # --- 6. Forward Dynamics Predictor Loss ---
-        if self.dynamics_weight > 0.0 and next_states_pred is not None and next_states_pred.shape[1] > 1:
-            raw_dyn_loss = F.mse_loss(next_states_pred[:, :-1], target_states[:, 1:], reduction="none")
-            dyn_mask = mask[:, 1:].unsqueeze(-1)
+        # Matches HDMLTrainer: next_states_pred directly regresses the dataset
+        # "next_states" field, i.e. s_{t+c} after the action chunk (dataset.py).
+        if self.dynamics_weight > 0.0 and next_states_pred is not None:
+            raw_dyn_loss = F.mse_loss(next_states_pred, target_states, reduction="none")
+            dyn_mask = mask.unsqueeze(-1)
             dyn_loss = (raw_dyn_loss * dyn_mask).sum() / torch.clamp(dyn_mask.sum() * next_states_pred.shape[-1], min=1.0)
         else:
             dyn_loss = torch.tensor(0.0, device=mask.device)
@@ -203,6 +207,9 @@ class HDMLLoss(nn.Module):
             + self.grad_caps_weight * grad_caps_loss
             + self.dynamics_weight * dyn_loss
         )
+
+        if not torch.isfinite(total_loss).all():
+            raise RuntimeError(f"Non-finite HDMLLoss: {float(total_loss.item())}")
 
         loss_dict = {
             "total_loss": float(total_loss.item()),

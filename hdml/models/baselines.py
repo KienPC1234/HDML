@@ -64,7 +64,7 @@ class DecisionTransformerBaseline(nn.Module):
         u_t = self.fusion(states=states, rtgs=rtgs, actions=actions, timesteps=timesteps)
 
         causal_mask = nn.Transformer.generate_square_subsequent_mask(seq_len, device=states.device)
-        h = self.transformer(u_t, mask=causal_mask, is_causal=True)
+        h = self.transformer(u_t, mask=causal_mask)
         actions_pred = self.action_head(h)
         return actions_pred
 
@@ -212,6 +212,11 @@ class DiffusionPolicyBaseline(nn.Module):
             states = states[:, -1, :]
         if rtgs.ndim == 3:
             rtgs = rtgs[:, -1, :]
+        elif rtgs.ndim == 2:
+            # (B, T) sequence of scalar RTGs -> last step, keep (B, 1).
+            rtgs = rtgs[:, -1:].to(dtype=states.dtype) if rtgs.is_floating_point() else rtgs[:, -1:]
+            if rtgs.ndim == 1:
+                rtgs = rtgs.unsqueeze(-1)
         elif rtgs.ndim == 1:
             rtgs = rtgs.unsqueeze(-1)
 
@@ -367,10 +372,17 @@ class MLPBCBaseline(nn.Module):
             if rtgs.ndim == 1:
                 rtgs = rtgs.unsqueeze(-1)
             elif rtgs.ndim == 3:
-                rtgs = rtgs.squeeze(-1)
+                # (B, T, 1) -> last valid step (B, 1); squeeze(-1) alone would
+                # wrongly yield (B, T) and break the cat below.
+                rtgs = rtgs[:, -1, :]
+            elif rtgs.ndim == 2 and rtgs.shape[-1] != 1:
+                # (B, T) scalar sequence -> last step (B, 1).
+                rtgs = rtgs[:, -1:]
         elif states.ndim == 3:
             if rtgs.ndim == 2:
                 rtgs = rtgs.unsqueeze(-1)
+            elif rtgs.ndim == 1:
+                rtgs = rtgs.unsqueeze(0).unsqueeze(-1).expand(states.shape[0], states.shape[1], 1)
         inp = torch.cat([states, rtgs], dim=-1)
         return self.net(inp)
 
