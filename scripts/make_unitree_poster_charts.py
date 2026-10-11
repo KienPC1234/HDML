@@ -103,6 +103,7 @@ def main() -> None:
          "Độ trễ suy luận eager trên GPU RTX 4070 SUPER", fmt="{:.2f}")
     ax.axhline(20, color="#E11D48", ls="--", lw=1.4)
     ax.text(len(ORDER) - 0.5, 20.6, "ngưỡng 20 ms (50 Hz)", ha="right", fontsize=8.5, color="#E11D48")
+    ax.set_ylim(0, 25)
     fig.tight_layout(); fig.savefig(out / "chart_unitree_latency.png", bbox_inches="tight"); plt.close(fig)
 
     for name in ("chart_unitree_returns", "chart_unitree_jerk",
