@@ -15,10 +15,16 @@ dependencies = [
     "ncps>=0.0.8",
     "gymnasium>=0.29.1",
     "mujoco>=3.1.0",
+    "minari>=0.4.0",
+    "torchrl>=0.3.0",
+    "tensordict>=0.3.0",
     "einops>=0.7.0",
     "timm>=0.9.16",
     "pyyaml>=6.0.1",
     "numpy>=1.26.0,<2.0.0",
+    "scipy>=1.12.0",
+    "onnx>=1.15.0",
+    "tqdm>=4.66.0",
 ]
 
 [tool.setuptools.packages.find]

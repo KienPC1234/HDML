@@ -196,6 +196,11 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--output-dir", default="results/rebuild_unitree")
+    parser.add_argument("--dt-checkpoint", default="checkpoints/rebuild_unitree/unitree_a1/baselines/dt/best_model.pt")
+    parser.add_argument("--mlp-checkpoint", default="checkpoints/rebuild_unitree/unitree_a1/baselines/mlp/best_model.pt")
+    parser.add_argument("--require-baselines", action="store_true",
+                        help="Abort (like benchmark_baselines.py) if a baseline checkpoint is missing, "
+                             "instead of writing an HDML-only report.")
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -248,10 +253,16 @@ def main() -> None:
     logger.info(f"Perturbed Completion Rate: {pert_res['completion_rate']:.1f}%")
 
     # 3. Decision Transformer Baseline Evaluation (if available)
-    dt_ckpt_path = Path("checkpoints/rebuild_unitree/unitree_a1/baselines/dt/best_model.pt")
+    dt_ckpt_path = Path(args.dt_checkpoint)
     dt_clean_res = None
     dt_pert_res = None
     dt_params = 0
+
+    if not dt_ckpt_path.exists():
+        msg = f"DT baseline checkpoint missing: {dt_ckpt_path}. Train it with scripts/train_baselines.py first."
+        if args.require_baselines:
+            raise FileNotFoundError(msg)
+        logger.warning(msg + " Continuing with HDML-only report (no DT comparison).")
 
     if dt_ckpt_path.exists():
         logger.info("Found trained Decision Transformer baseline! Evaluating on Unitree A1...")
@@ -298,10 +309,16 @@ def main() -> None:
         logger.info(f"DT Perturbed Completion Rate: {dt_pert_res['completion_rate']:.1f}%")
 
     # 4. MLP-BC Baseline Evaluation (if available)
-    mlp_ckpt_path = Path("checkpoints/rebuild_unitree/unitree_a1/baselines/mlp/best_model.pt")
+    mlp_ckpt_path = Path(args.mlp_checkpoint)
     mlp_clean_res = None
     mlp_pert_res = None
     mlp_params = 0
+
+    if not mlp_ckpt_path.exists():
+        msg = f"MLP baseline checkpoint missing: {mlp_ckpt_path}. Train it with scripts/train_baselines.py first."
+        if args.require_baselines:
+            raise FileNotFoundError(msg)
+        logger.warning(msg + " Continuing with HDML-only report (no MLP comparison).")
 
     if mlp_ckpt_path.exists():
         logger.info("Found trained MLP-BC baseline! Evaluating on Unitree A1...")
@@ -348,6 +365,8 @@ def main() -> None:
     # Save results to JSON
     summary = {
         "robot": "Unitree A1 Quadruped Dog (12-DoF 3D)",
+        "baselines_missing": dt_clean_res is None or mlp_clean_res is None,
+        "uncertainty_scope": f"{args.episodes} episodes of one checkpoint per model, not independent training seeds",
         "hdml": {
             "params_count": sum(p.numel() for p in model.parameters()),
             "clean": clean_res,
