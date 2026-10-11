@@ -178,7 +178,7 @@ class CrossModalFusion(nn.Module):
 
         # Handle actions
         if actions is None:
-            actions = torch.zeros(batch_size, seq_len, self.action_dim, device=device)
+            actions = torch.zeros(batch_size, seq_len, self.action_dim, device=device, dtype=states.dtype)
         assert actions.shape == (batch_size, seq_len, self.action_dim), (
             f"Expected actions shape {(batch_size, seq_len, self.action_dim)}, got {actions.shape}"
         )
@@ -206,7 +206,7 @@ class CrossModalFusion(nn.Module):
         if self.use_visual:
             assert self.visual_encoder is not None, "Visual encoder not initialized."
             if visual_frames is None:
-                z_vis = torch.zeros(batch_size, seq_len, self.d_model, device=device)
+                z_vis = torch.zeros(batch_size, seq_len, self.d_model, device=device, dtype=states.dtype)
             else:
                 z_vis = self.visual_encoder(visual_frames)
             z_vis = z_vis + z_time

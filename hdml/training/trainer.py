@@ -217,7 +217,7 @@ class HDMLTrainer:
         mask_exp_state = mask.unsqueeze(-1)
 
         # Backbone features and the nominal action-chunk policy.
-        subgoals_pred, latent_features, values_pred, next_states_pred, flow_context, actions_pred = self.model.encode(
+        subgoals_pred, latent_features, values_pred, next_states_pred, flow_context, actions_pred, _ = self.model.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps
         )
 
@@ -518,7 +518,9 @@ class HDMLTrainer:
         for epoch in epoch_bar:
             train_metrics = self.train_epoch(epoch)
             # Respect eval_interval: validation every epoch is 2x work for no gain.
-            # val_metrics={} on skipped epochs keeps best-tracking on train loss.
+            # On skipped epochs val_metrics={} and best-tracking is SKIPPED so
+            # best_model.pt always reflects a validation optimum, never a
+            # train-loss optimum.
             if self.val_loader is not None and (epoch % max(1, self.config.eval_interval) == 0 or epoch == self.config.max_epochs):
                 val_metrics = self.evaluate()
             else:
@@ -527,12 +529,13 @@ class HDMLTrainer:
             combined = {**train_metrics, **val_metrics}
             history.append(combined)
 
-            current_val = val_metrics.get("val_loss", train_metrics["train_loss"])
-            is_best = current_val < self.best_loss
-            if is_best:
-                self.best_loss = current_val
-                # Persist the best model immediately, independent of the periodic interval.
-                self.save_checkpoint(self.output_dir / "best_model.pt")
+            if "val_loss" in val_metrics:
+                current_val = val_metrics["val_loss"]
+                is_best = current_val < self.best_loss
+                if is_best:
+                    self.best_loss = current_val
+                    # Persist the best model immediately, independent of the periodic interval.
+                    self.save_checkpoint(self.output_dir / "best_model.pt")
 
             if "val_loss" in val_metrics and self.wandb_active:
                 try:

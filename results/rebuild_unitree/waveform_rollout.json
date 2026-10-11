@@ -1,16 +1,11 @@
 {
   "config": "configs/unitree_a1_aug.yaml",
   "steps": 1000,
-  "joint": 1,
-  "hdml_jerk_metric": 0.06279874593019485,
+  "hdml_jerk_metric": 0.06277067214250565,
   "dt_jerk_metric": 0.07334629446268082,
-  "hdml_mean_jerk": 0.06279873847961426,
+  "hdml_mean_jerk": 0.06277067214250565,
   "dt_mean_jerk": 0.07334629446268082,
-  "hdml_median_jerk": 0.04311205446720123,
+  "hdml_median_jerk": 0.043276380747556686,
   "dt_median_jerk": 0.04785047471523285,
-  "hdml_joint0_amp": 0.2768571972846985,
-  "dt_joint0_amp": 0.27344757318496704,
-  "hdml_joint1_amp": 2.0,
-  "dt_joint1_amp": 1.972146987915039,
-  "note": "clean locomotion, no kick; joint indices are 0-based over the 12 actuators"
+  "reduction_pct": 14.4
 }
