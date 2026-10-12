@@ -38,6 +38,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--advantage-weighting", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_advantage_weighting")
     parser.add_argument("--best-metric", type=str, default=None, help="Override training.best_metric (e.g. val_action_loss, val_loss)")
     parser.add_argument("--compile-cfc", action=argparse.BooleanOptionalAction, default=None, help="Override training.compile_cfc")
+    parser.add_argument("--cfc", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable CfC action filter (e.g. --no-cfc for lightweight NPC)")
+    parser.add_argument("--critic", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable HiQC critic (e.g. --no-critic for pure imitation)")
+    parser.add_argument("--policy", type=str, default=None, choices=["flow", "gaussian"], help="Action policy type ('flow' or 'gaussian')")
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_wandb")
     parser.add_argument("--wandb-project", type=str, default=None, help="Override training.wandb_project")
     parser.add_argument("--wandb-name", type=str, default=None, help="WandB experiment run name")
@@ -47,7 +50,7 @@ def parse_args() -> argparse.Namespace:
 
 def _apply_overrides(cfg: HDMLConfig, args: argparse.Namespace) -> None:
     """Apply explicitly-passed CLI values on top of the YAML training config."""
-    overrides: dict[str, Any] = {
+    training_overrides: dict[str, Any] = {
         "seed": args.seed,
         "max_epochs": args.epochs,
         "batch_size": args.batch_size,
@@ -63,9 +66,17 @@ def _apply_overrides(cfg: HDMLConfig, args: argparse.Namespace) -> None:
         "wandb_run_name": args.wandb_name,
         "use_tensorboard": args.tensorboard,
     }
-    for key, value in overrides.items():
+    for key, value in training_overrides.items():
         if value is not None:
             setattr(cfg.training, key, value)
+
+    # Model architecture overrides for fast user experimentation / NPC deployment
+    if args.cfc is not None:
+        cfg.model.use_cfc = args.cfc
+    if args.critic is not None:
+        cfg.model.use_critic = args.critic
+    if args.policy is not None:
+        cfg.model.action_policy = args.policy
     if args.output_dir is not None:
         cfg.training.output_dir = args.output_dir
         cfg.training.log_dir = str(Path(args.output_dir) / "logs")

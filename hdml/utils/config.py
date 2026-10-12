@@ -33,6 +33,8 @@ class ModelConfig:
     mamba3_rope_fraction: float = 0.5
     mamba3_outproj_norm: bool = False
     mamba3_chunk: int = 64
+    use_cfc: bool = True  # enable CfC liquid action filter (can disable for low-overhead game/NPC)
+    use_critic: bool = True  # enable HiQC critic (disable if doing pure behavior cloning / imitation)
     device: str = "cuda"
 
 
