@@ -50,15 +50,19 @@ class HDMLModel(nn.Module):
         mamba3_rope_fraction: float = 0.5,
         mamba3_outproj_norm: bool = False,
         mamba3_chunk: int = 64,
+        use_cfc: bool = True,
+        use_critic: bool = True,
     ) -> None:
         super().__init__()
         self.prop_dim = prop_dim
         self.action_dim = action_dim
         self.d_model = d_model
         self.d_subgoal = prop_dim if d_subgoal is None else d_subgoal
-        self.use_flow = True
+        self.use_flow = (action_policy == "flow")
         self.num_flow_steps = 4
         self.chunk_size = chunk_size
+        self.use_cfc = use_cfc
+        self.use_critic = use_critic
         # Deterministic flow solve (conditional-mean estimate) is the default for
         # evaluation: it scores much higher than stochastic sampling and is the
         # standard way to evaluate a flow-matching policy. Set False to sample.
@@ -110,7 +114,7 @@ class HDMLModel(nn.Module):
                 prop_dim=prop_dim,
             )
 
-        # 3. Generative Flow-Matching action-chunk policy and HiQC critic.
+        # 3. Generative Flow-Matching action-chunk policy and optional HiQC critic.
         flow_context_dim = self.d_subgoal + prop_dim + 1
         critic_context_dim = self.d_subgoal + prop_dim
         self.flow_context_dim = flow_context_dim
@@ -125,20 +129,27 @@ class HDMLModel(nn.Module):
                 action_dim=action_dim, chunk_size=self.chunk_size,
                 context_dim=flow_context_dim, hidden_dim=256,
             )
-        self.hiqc_critic: nn.Module = HiQCCritic(
-            state_dim=critic_context_dim, action_dim=action_dim,
-            chunk_size=self.chunk_size, hidden_dim=256,
-        )
-        # CfC filters the single executed action (per the two-tier control diagram).
-        self.cfc_filter: nn.Module = CfCActionFilter(
-            action_dim=action_dim,
-            chunk_size=1,
-            state_dim=d_model,
-            units=cfc_units,
-            backbone_units=cfc_backbone_units,
-            backbone_layers=cfc_backbone_layers,
-            residual=cfc_residual,
-        )
+        if use_critic:
+            self.hiqc_critic: nn.Module | None = HiQCCritic(
+                state_dim=critic_context_dim, action_dim=action_dim,
+                chunk_size=self.chunk_size, hidden_dim=256,
+            )
+        else:
+            self.hiqc_critic = None
+
+        # CfC filters the single executed action (can be toggled off for lightweight NPC/Game deployments).
+        if use_cfc:
+            self.cfc_filter: nn.Module | None = CfCActionFilter(
+                action_dim=action_dim,
+                chunk_size=1,
+                state_dim=d_model,
+                units=cfc_units,
+                backbone_units=cfc_backbone_units,
+                backbone_layers=cfc_backbone_layers,
+                residual=cfc_residual,
+            )
+        else:
+            self.cfc_filter = None
 
     @classmethod
     def from_config(cls, cfg: ModelConfig) -> HDMLModel:
@@ -168,6 +179,8 @@ class HDMLModel(nn.Module):
             mamba3_rope_fraction=cfg.mamba3_rope_fraction,
             mamba3_outproj_norm=cfg.mamba3_outproj_norm,
             mamba3_chunk=cfg.mamba3_chunk,
+            use_cfc=getattr(cfg, "use_cfc", True),
+            use_critic=getattr(cfg, "use_critic", True),
         )
         return model
 

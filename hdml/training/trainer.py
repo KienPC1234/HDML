@@ -322,23 +322,29 @@ class HDMLTrainer:
         # 2. HiQC chunk critic loss toward the discounted c-step reward + RTG[t+c].
         #    k-step identity: RTG[t] = R_c[t] + gamma^c * RTG[t+c], so the target
         #    bootstraps from the dataset future return (Monte-Carlo, no target net).
-        critic_context = torch.cat([subgoals_pred.detach(), states], dim=-1)
-        q1_pred, q2_pred = self.model.hiqc_critic(critic_context, target_chunks)
-        q_target = reward_chunks + (self.config.gamma ** self.model.chunk_size) * target_next_rtgs
-        q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_exp
-        q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_exp
-        q_loss = (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_exp.sum() * 2, min=1.0)
-        q_chunk_value = torch.minimum(q1_pred, q2_pred)
+        has_critic = getattr(self.model, "hiqc_critic", None) is not None
+        if has_critic and (self.config.q_weight > 0.0 or self.config.use_advantage_weighting):
+            critic_context = torch.cat([subgoals_pred.detach(), states], dim=-1)
+            q1_pred, q2_pred = self.model.hiqc_critic(critic_context, target_chunks)
+            q_target = reward_chunks + (self.config.gamma ** self.model.chunk_size) * target_next_rtgs
+            q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_exp
+            q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_exp
+            q_loss = (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_exp.sum() * 2, min=1.0)
+            q_chunk_value = torch.minimum(q1_pred, q2_pred)
 
-        # 3. Value loss: expectile regression toward the conservative chunk value.
-        raw_val = self._expectile_loss(q_chunk_value.detach() - values_pred, tau=0.7)
-        value_loss = (raw_val * mask_exp).sum() / torch.clamp(mask_exp.sum(), min=1.0)
+            # 3. Value loss: expectile regression toward the conservative chunk value.
+            raw_val = self._expectile_loss(q_chunk_value.detach() - values_pred, tau=0.7)
+            value_loss = (raw_val * mask_exp).sum() / torch.clamp(mask_exp.sum(), min=1.0)
 
-        # Per-token policy weights (B, T, 1): AWR advantage weights (unit mean over
-        # valid tokens, zero on padding) or the plain mask.
-        if self.config.use_advantage_weighting:
-            token_w = advantage_weights(q1_pred, q2_pred, values_pred, mask, self.config.advantage_temperature)
+            # Per-token policy weights (B, T, 1): AWR advantage weights (unit mean over
+            # valid tokens, zero on padding) or the plain mask.
+            if self.config.use_advantage_weighting:
+                token_w = advantage_weights(q1_pred, q2_pred, values_pred, mask, self.config.advantage_temperature)
+            else:
+                token_w = mask_exp.float()
         else:
+            q_loss = states.new_zeros(())
+            value_loss = states.new_zeros(())
             token_w = mask_exp.float()
 
         # 0. Action imitation loss on the executed action (first chunk step, CfC-refined).
@@ -369,7 +375,8 @@ class HDMLTrainer:
         #    Never computed under inference_mode (validation), so it is excluded
         #    from val_loss.
         pave_active = (
-            self.config.pave_weight > 0.0
+            has_critic
+            and self.config.pave_weight > 0.0
             and torch.is_grad_enabled()
             and self.config.pave_interval > 0
             and (self.current_step % self.config.pave_interval == 0)
