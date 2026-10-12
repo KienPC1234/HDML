@@ -5,6 +5,49 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def advantage_weights(
+    q1_pred: torch.Tensor,
+    q2_pred: torch.Tensor,
+    values_pred: torch.Tensor,
+    mask: torch.Tensor,
+    temperature: float,
+) -> torch.Tensor:
+    """Bounded AWR/IQL advantage weights for the policy (action / flow) objective.
+
+    w(s, a) = clip(exp(norm(Q_min(s, a) - V(s)) / temperature), 0.1, 10),
+    renormalised to unit mean over valid tokens. The advantage is standardised
+    over the valid tokens of the batch so the weighting is invariant to the
+    return scale. Weights are detached (no gradient into critic or value head).
+
+    Args:
+        q1_pred: HiQC critic output, (B, T, 1).
+        q2_pred: HiQC critic output, (B, T, 1).
+        values_pred: Backbone value head output, (B, T, 1).
+        mask: Validity mask, (B, T).
+        temperature: AWR temperature (> 0).
+
+    Returns:
+        Weights of shape (B, T, 1), float32, zero on padded tokens.
+    """
+    if temperature <= 0.0:
+        raise ValueError(f"advantage temperature must be > 0, got {temperature}")
+    with torch.no_grad():
+        q = torch.minimum(q1_pred, q2_pred).float()  # conservative Q estimate
+        adv = q - values_pred.float()
+        valid = mask.unsqueeze(-1).float()
+        num_valid = valid.sum().clamp(min=1.0)
+        adv_mean = (adv * valid).sum() / num_valid
+        adv_var = (((adv - adv_mean) ** 2) * valid).sum() / num_valid
+        adv_std = torch.sqrt(adv_var.clamp(min=1e-8))
+        adv_norm = (adv - adv_mean) / adv_std
+        # Bounded exponential weighting; never zeroes out part of the dataset.
+        weight = torch.clamp(torch.exp(adv_norm / temperature), min=0.1, max=10.0)
+        weight = weight * valid
+        weight_sum = weight.sum().clamp(min=1.0)
+        weight = weight * (num_valid / weight_sum)
+    return weight
+
+
 class HDMLLoss(nn.Module):
     """
     HDML Comprehensive Loss Function.
@@ -61,36 +104,8 @@ class HDMLLoss(nn.Module):
         values_pred: torch.Tensor,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        """DIVO-style binary advantage weights for the flow-matching objective.
-
-        w(s, a) = 1[Q(s, a) > V(s)] * exp((Q(s, a) - V(s)) / beta)
-
-        Args:
-            q1_pred/q2_pred: HiQC critic outputs, shape (B, T, 1).
-            values_pred: Backbone value head output, shape (B, T, 1).
-            mask: Validity mask, shape (B, T).
-
-        Returns:
-            Advantage weights normalized to unit mean over valid tokens, shape (B, T, 1).
-        """
-        with torch.no_grad():
-            q = torch.minimum(q1_pred, q2_pred)  # conservative Q estimate
-            adv = q - values_pred
-            # Normalize the advantage to zero-mean unit-variance over valid tokens so
-            # the exponential weighting is invariant to the reward scale.
-            valid = mask.unsqueeze(-1)
-            num_valid = valid.sum().clamp(min=1.0)
-            adv_mean = (adv * valid).sum() / num_valid
-            adv_var = (((adv - adv_mean) ** 2) * valid).sum() / num_valid
-            adv_std = torch.sqrt(adv_var.clamp(min=1e-8))
-            adv_norm = (adv - adv_mean) / adv_std
-            # Bounded exponential weighting (AWR/IQL formulation) - do NOT zero out half the dataset
-            weight = torch.clamp(torch.exp(adv_norm / self.advantage_temperature), min=0.1, max=10.0)
-            weight = weight * valid
-            # Normalize so the weights have unit mean over valid tokens (stable loss scale).
-            weight_sum = weight.sum().clamp(min=1.0)
-            weight = weight * (num_valid / weight_sum)
-        return weight
+        """Bounded AWR/IQL advantage weights (see :func:`advantage_weights`)."""
+        return advantage_weights(q1_pred, q2_pred, values_pred, mask, self.advantage_temperature)
 
     def forward(
         self,

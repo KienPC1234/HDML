@@ -181,20 +181,28 @@ class FastTensorTrajectoryDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return self.states.shape[0]
 
-    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+    def as_tensor_dict(self) -> dict[str, torch.Tensor]:
+        """Return the contiguous per-sample buffers keyed like ``__getitem__``.
+
+        Every tensor has leading dimension ``len(self)``, so a whole batch can
+        be gathered with a single ``index_select`` per field.
+        """
         return {
-            "states": self.states[index],
-            "actions": self.actions[index],
-            "rtgs": self.rtgs[index],
-            "timesteps": self.timesteps[index],
-            "mask": self.mask[index],
-            "target_actions": self.target_actions[index],
-            "target_chunks": self.target_chunks[index],
-            "target_rtgs": self.target_rtgs[index],
-            "target_next_rtgs": self.target_next_rtgs[index],
-            "reward_chunks": self.reward_chunks[index],
-            "next_states": self.next_states[index],
+            "states": self.states,
+            "actions": self.actions,
+            "rtgs": self.rtgs,
+            "timesteps": self.timesteps,
+            "mask": self.mask,
+            "target_actions": self.target_actions,
+            "target_chunks": self.target_chunks,
+            "target_rtgs": self.target_rtgs,
+            "target_next_rtgs": self.target_next_rtgs,
+            "reward_chunks": self.reward_chunks,
+            "next_states": self.next_states,
         }
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        return {key: tensor[index] for key, tensor in self.as_tensor_dict().items()}
 
 
 class TrajectoryDataset(Dataset[dict[str, torch.Tensor]]):

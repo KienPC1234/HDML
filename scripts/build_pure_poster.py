@@ -21,7 +21,7 @@ def main() -> None:
         "a1_thumb.png": "image/png",
         "walker2d_raw.png": "image/png",
         "humanoid_raw.png": "image/png",
-        "chart_torque_chatter_k1.png": "image/png",
+        "waveforms_unitree.png": "image/png",
         "hdml_architecture.png": "image/png",
         "chart_k3_returns.png": "image/png",
         "chart_k3_smoothness.png": "image/png",
@@ -301,7 +301,7 @@ def main() -> None:
     }}
 
     .k2-arch-box {{
-      flex: 3;
+      flex: 3.3;
       background: #f0f9ff;
       border: 1px solid #bae6fd;
       border-radius: 12px;
@@ -317,7 +317,7 @@ def main() -> None:
     }}
 
     .k2-info-box {{
-      flex: 1.2;
+      flex: 1.1;
       display: flex;
       flex-direction: column;
       gap: 9px;
@@ -736,7 +736,7 @@ def main() -> None:
         <!-- Cột phải: Đồ thị Đo Thực Nghiệm + Vấn đề thực tế & Giải pháp -->
         <div class="k1-right">
           <div class="k1-chart-box">
-            <img src="{b64_data['chart_torque_chatter_k1.png']}" alt="Đo thực nghiệm: Dao động răng cưa và rung giật tích lũy">
+            <img src="{b64_data['waveforms_unitree.png']}" alt="Hình 3: Phân bố rung giật và rung giật tích lũy (HDML vs Transformer qua 998 bước)">
           </div>
           <div class="k1-problem-grid">
             <div class="k1-problem-card">
@@ -766,11 +766,11 @@ def main() -> None:
           </div>
           <div class="k2-step-card">
             <strong>Dữ liệu & Huấn luyện</strong>
-            Huấn luyện mô hình nền tảng trên 14 tập dữ liệu chuyển động (tổng cộng 6,56 triệu bước chân) bằng 1 card đồ họa RTX 4070 SUPER; bổ sung hàm phạt chống giật chuyển động.
+            Huấn luyện mô hình nền tảng trên 14 tập dữ liệu chuyển động (tổng cộng 6,56 triệu bước chuyển tiếp) bằng 1 card đồ họa RTX 4070 SUPER; bổ sung hàm phạt chống giật chuyển động.
           </div>
           <div class="k2-step-card">
             <strong>Quy trình đo kiểm</strong>
-            Chạy thử nghiệm vòng kín lặp lại qua 3 lần độc lập (3 seed) để đo độ êm của khớp, tốc độ xử lý phần cứng và khả năng giữ thăng bằng khi bị tác động ngoại lực xô đẩy.
+            Đánh giá điểm thưởng Unitree A1 qua 3 seed huấn luyện độc lập. Thử lực xô ngang với 3 episode mỗi mức lực, cùng seed; đo riêng độ trơn và độ trễ suy luận.
           </div>
         </div>
       </div>
@@ -802,7 +802,7 @@ def main() -> None:
             <div class="kpi-tag">DÁNG ĐI VỮNG CHÃI</div>
             <div class="kpi-num">1466 Điểm</div>
           </div>
-          <div class="kpi-desc">Dẫn đầu trong 6 mô hình đối chứng (Transformer 1443, RNN 1438, IQL 1430, MLP-BC 1311, Diffusion 987).</div>
+          <div class="kpi-desc">Dẫn đầu trong 6 mô hình được so sánh.</div>
         </div>
 
         <div class="k3-kpi-card k3-card-teal">
@@ -810,23 +810,23 @@ def main() -> None:
             <div class="kpi-tag">ĐỘ MƯỢT KHỚP CHÂN</div>
             <div class="kpi-num">Giảm 14,4% Jerk</div>
           </div>
-          <div class="kpi-desc">Giảm 36,2% các cú giật mạnh nguy hiểm (7,4% vs 11,6%), giúp bảo vệ bánh răng hộp số và tránh quá nhiệt motor.</div>
+          <div class="kpi-desc">Tỷ lệ bước có chỉ số rung giật vượt 0,2 giảm từ 11,6% xuống 7,4%, tương đương giảm 36,2%.</div>
         </div>
 
         <div class="k3-kpi-card k3-card-purple">
           <div>
             <div class="kpi-tag">CHỊU LỰC XÔ NGANG</div>
-            <div class="kpi-num">Mức xô 200N</div>
+            <div class="kpi-num">200 N trong 60 ms</div>
           </div>
           <div class="kpi-desc">Giữ vững bước đi đạt 1446 điểm (+239 điểm so với Transformer 1207). Độ nghiêng người tối đa chỉ 28,2° vs 33,2°.</div>
         </div>
 
         <div class="k3-kpi-card k3-card-blue">
           <div>
-            <div class="kpi-tag">PHẢN XẠ SIÊU NHANH</div>
+            <div class="kpi-tag">SUY LUẬN NHANH</div>
             <div class="kpi-num">0,38 ms</div>
           </div>
-          <div class="kpi-desc">Đạt 2649 Hz trên GPU và 2,41 ms (415 Hz) trên CPU nhúng. Xử lý tức thì, bỏ xa yêu cầu tối thiểu 20 ms (50 Hz).</div>
+          <div class="kpi-desc">Suy luận GPU đạt 0,38 ms với CUDA Graph; ONNX đạt 2,41 ms trên CPU máy trạm Intel Xeon E5-2690 v4.</div>
         </div>
       </div>
     </div>
@@ -838,31 +838,31 @@ def main() -> None:
       <div class="k4-row-top">
         <div class="k4-img-col">
           <img src="{b64_data['unitree_a1_kick_recovery_real.png']}" alt="Phục hồi thăng bằng robot Unitree A1 sau xung lực xô ngang">
-          <div class="k4-caption">Thực nghiệm xô ngang mức 200: Bị tác động bất ngờ ở (b), robot tự ghìm chân trụ dập dao động và lấy lại dáng đi chuẩn sau 0,2s</div>
+          <div class="k4-caption">Thử nghiệm lực xô ngang 200 N trong 60 ms: robot chịu tác động, điều chỉnh tư thế và phục hồi dáng đi.</div>
         </div>
         <div class="k4-top-right">
           <!-- HỘP GIẢI THÍCH CƠ CHẾ DỄ HIỂU -->
           <div class="k4-qa-box">
-            <div class="k4-qa-header">Vì sao mô hình đạt được kết quả trên?</div>
+            <div class="k4-qa-header">Giải thích cơ chế động học</div>
             <div class="k4-qa-item">
-              <strong>1. Tốc độ tính toán siêu nhanh (0,38 ms):</strong> Cấu trúc Mamba có độ phức tạp tuyến tính O(L), không phải tính ma trận vuông O(L^2) nặng nề như Transformer; kết hợp nạp sẵn luồng lệnh trực tiếp trên GPU.
+              <strong>Tốc độ suy luận:</strong> CUDA Graph giảm chi phí gọi các phép tính GPU, đưa độ trễ từ 7,75 ms xuống 0,38 ms trong cùng phép đo.
             </div>
             <div class="k4-qa-item">
-              <strong>2. Bước chân êm ái, bớt rung giật:</strong> Tầng nơ-ron lỏng hoạt động như bộ giảm chấn toán học liên tục thời gian, tự động vuốt phẳng các nấc nhảy bậc thang trước khi gửi tín hiệu xuống động cơ.
+              <strong>Độ trơn hành động:</strong> HDML giảm 14,4% chỉ số rung giật so với Decision Transformer. Kết quả này đánh giá toàn bộ kiến trúc, chưa tách riêng đóng góp của CfC khi va chạm.
             </div>
             <div class="k4-qa-item">
-              <strong>3. Không bị ngã khi bị xô đẩy:</strong> Bộ nhớ của Mamba không bị trôi khi gặp cú huých bất ngờ; thuật toán an toàn ngắt chuỗi hành động mở để chuyển sang chế độ ghìm chân và phân bổ lại lực bàn chân.
+              <strong>Khả năng chịu va chạm:</strong> ở mức 200 N trong 60 ms, HDML hoàn thành các episode thử nghiệm và có góc nghiêng đỉnh thấp hơn đối chứng; cả hai cùng ngã ở mức 400 N.
             </div>
           </div>
 
           <div class="k4-meta-grid">
             <div class="k4-novelty-box">
               <strong>ĐIỂM MỚI NỔI BẬT:</strong>
-              Chia đôi nhịp điều khiển (tầng chậm lo hướng đi, tầng nhanh làm êm khớp); gắn thêm bộ chuyển đổi nhỏ (chỉ 3,8% tham số) là dùng được ngay cho robot khác mà không cần dạy lại mạng lõi.
+              Kết hợp Mamba, Flow Matching, CfC và giám sát PACE trong kiến trúc phân cấp; tinh chỉnh bộ điều hợp với khoảng 3,5–3,8% tham số để dự đoán hành động trên các hình thái robot.
             </div>
             <div class="k4-limit-box">
               <strong>HẠN CHẾ THỰC TẾ:</strong>
-              Toàn bộ dữ liệu hiện được đo đạc trong môi trường mô phỏng vật lý MuJoCo. Nhóm chưa thử nghiệm trên robot thật ngoài đời do giới hạn phần cứng thực tế.
+              Toàn bộ dữ liệu hiện được đo đạc trong môi trường mô phỏng vật lý MuJoCo. Chưa kiểm chứng điều khiển vòng kín trên hình thái mới và chưa đo trên CPU nhúng.
             </div>
           </div>
         </div>
@@ -875,7 +875,7 @@ def main() -> None:
           <div class="k4-badges-row">
             <div class="k4-badge-item">
               <span class="k4-badge-val">0,38 ms</span>
-              <span class="k4-badge-lbl">Tốc độ phản xạ (đạt 2649 Hz)</span>
+              <span class="k4-badge-lbl">Suy luận GPU / CUDA Graph</span>
             </div>
             <div class="k4-badge-item">
               <span class="k4-badge-val">-14,4%</span>
@@ -883,18 +883,18 @@ def main() -> None:
             </div>
             <div class="k4-badge-item">
               <span class="k4-badge-val">&lt; 1 Phút</span>
-              <span class="k4-badge-lbl">Thích ứng sang robot mới</span>
+              <span class="k4-badge-lbl">Tinh chỉnh dự đoán hành động</span>
             </div>
             <div class="k4-badge-item">
-              <span class="k4-badge-val">200 N</span>
-              <span class="k4-badge-lbl">Kháng lực xô không ngã</span>
+              <span class="k4-badge-val">200 N · 60 ms</span>
+              <span class="k4-badge-lbl">Hoàn thành 3/3 episode</span>
             </div>
           </div>
         </div>
 
         <div class="k4-conclusion-box">
           <strong>KẾT LUẬN</strong>
-          <p>Mô hình phân cấp HDML giải quyết đồng thời 3 bài toán lớn: phản xạ cực nhanh, bước đi êm ái bảo vệ khớp máy và đứng vững trước va chạm, mở ra hướng ứng dụng linh hoạt cho nhiều dòng robot chân.</p>
+          <p>Mô hình phân cấp HDML giải quyết đồng thời 3 bài toán lớn: phản xạ thời gian thực, bước đi êm ái bảo vệ khớp máy và đứng vững trước va chạm, mở ra hướng ứng dụng linh hoạt cho nhiều dòng robot chân.</p>
         </div>
 
         <div class="k4-qr-box">

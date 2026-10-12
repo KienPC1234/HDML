@@ -46,7 +46,6 @@ training:
   log_dir: logs/rebuild_unitree
   flow_weight: 1.0
   q_weight: 1.0
-  value_weight: 1.0
   action_weight: 1.0
   pave_weight: 0.001
   pave_interval: 4
