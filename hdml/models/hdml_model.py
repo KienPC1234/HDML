@@ -207,6 +207,39 @@ class HDMLModel(nn.Module):
             next_hx:         Updated CfC hidden state or None (same forward math;
                 previously discarded, now returned for stateful rollouts)
         """
+        subgoals, latent, values, next_states, flow_context, executed_action, next_hx, _ = self.encode_with_chunk(
+            states=states,
+            rtgs=rtgs,
+            actions=actions,
+            timesteps=timesteps,
+            visual_frames=visual_frames,
+            hx=hx,
+            with_action=with_action,
+            action_last_only=action_last_only,
+        )
+        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx
+
+    def encode_with_chunk(
+        self,
+        states: torch.Tensor,
+        rtgs: torch.Tensor,
+        actions: torch.Tensor | None = None,
+        timesteps: torch.Tensor | None = None,
+        visual_frames: torch.Tensor | None = None,
+        hx: torch.Tensor | None = None,
+        with_action: bool = True,
+        action_last_only: bool = False,
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+        torch.Tensor | None, torch.Tensor | None, torch.Tensor | None,
+    ]:
+        """Same as :meth:`encode`, additionally returning the sampled action chunk.
+
+        Returns:
+            The 7 outputs of :meth:`encode` followed by
+            chunk: (B, T, chunk_size, action_dim) (or (B, 1, ...) when
+            ``action_last_only``), or None when ``with_action`` is False.
+        """
         u_t = self.fusion(
             states=states,
             rtgs=rtgs,
@@ -220,7 +253,7 @@ class HDMLModel(nn.Module):
         flow_context = torch.cat([subgoals, states, rtgs], dim=-1)
 
         if not with_action:
-            return subgoals, latent, values, next_states, flow_context, None, None
+            return subgoals, latent, values, next_states, flow_context, None, None, None
 
         if action_last_only:
             fc = flow_context[:, -1:, :]
@@ -234,7 +267,7 @@ class HDMLModel(nn.Module):
             executed_action, next_hx = self.cfc_filter(nominal, lat, hx=hx)
         else:
             executed_action, next_hx = nominal, None
-        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx
+        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx, chunk
 
     def _sample_chunk(self, flow_context: torch.Tensor) -> torch.Tensor:
         """Differentiable action-chunk sample -> (B, T, chunk, action_dim).
