@@ -20,6 +20,7 @@ Notes: 3-seed spread HDML 1465.7 ± 23.0 (`multiseed.json`); CUDA-graph inferenc
 ## Run
 
 ```bash
+git lfs install # bat buoc: model 3D/video luu bang Git LFS
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install causal-conv1d --no-build-isolation && pip install mamba-ssm --no-build-isolation
 pip install -r requirements.txt && pip install -e .
