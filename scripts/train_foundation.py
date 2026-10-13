@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
+import os
 from pathlib import Path
 import yaml
 import numpy as np
@@ -39,12 +41,35 @@ def train_foundation(config_path: str) -> None:
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
+    # CLI overrides via environment (set by __main__ below; keeps the
+    # function signature stable for programmatic callers).
+    if os.environ.get("HDML_FM_EPOCHS"):
+        cfg["training"]["max_epochs"] = int(os.environ["HDML_FM_EPOCHS"])
+    if os.environ.get("HDML_FM_BATCH"):
+        cfg["training"]["batch_size"] = int(os.environ["HDML_FM_BATCH"])
+    if os.environ.get("HDML_FM_OUTDIR"):
+        cfg["training"]["output_dir"] = os.environ["HDML_FM_OUTDIR"]
+    if os.environ.get("HDML_FM_LOGDIR"):
+        cfg["training"]["log_dir"] = os.environ["HDML_FM_LOGDIR"]
+    if os.environ.get("HDML_FM_SCALERET"):
+        cfg["training"]["scale_return"] = float(os.environ["HDML_FM_SCALERET"])
+
     logger = setup_logger(cfg["training"]["log_dir"])
     logger.info(f"Loaded HDML-Foundation config from {config_path}")
 
     device = torch.device(cfg["model"]["device"] if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg["training"]["seed"])
     np.random.seed(cfg["training"]["seed"])
+    # GPU throughput knobs that do not change numerics: TF32 + cudnn autotune
+    # for fixed input shapes (same policy as HDMLTrainer).
+    if device.type == "cuda":
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
+            torch.set_float32_matmul_precision("high")
+        except Exception as e:  # noqa: BLE001 - backend flags must not crash training
+            logger.warning(f"Could not enable TF32/high-precision matmul: {e}")
 
     # 1. Initialize Foundation Model
     model = HDMLFoundationModel(
@@ -81,16 +106,21 @@ def train_foundation(config_path: str) -> None:
         raise ValueError("No embodiment datasets configured")
 
     # 3. Initialize High-Performance FastMultiEmbodimentManager
+    # scale_return keeps RTG targets O(1) so the RTG-MSE term cannot drown the
+    # action-imitation loss (raw returns are O(1e2)-O(1e3) on locomotion data).
+    scale_return = float(cfg["training"].get("scale_return", 1000.0))
     manager = FastMultiEmbodimentManager(
         embodiment_paths=embodiment_paths,
         context_length=cfg["training"]["context_length"],
-        gamma=cfg["training"]["gamma"], split="train", split_seed=cfg["training"]["seed"],
+        gamma=cfg["training"]["gamma"], scale_return=scale_return,
+        split="train", split_seed=cfg["training"]["seed"],
     )
     logger.info(f"FastMultiEmbodimentManager initialized with {manager.total_steps:,} total multi-robot steps.")
 
     validation_manager = FastMultiEmbodimentManager(
         embodiment_paths, context_length=cfg["training"]["context_length"],
-        gamma=cfg["training"]["gamma"], split="validation", split_seed=cfg["training"]["seed"])
+        gamma=cfg["training"]["gamma"], scale_return=scale_return,
+        split="validation", split_seed=cfg["training"]["seed"])
     data_manifest = {
         name: {"train_episode_hashes": manager.buffers[name].episode_hashes,
                "validation_episode_hashes": validation_manager.buffers[name].episode_hashes,
@@ -119,16 +149,64 @@ def train_foundation(config_path: str) -> None:
     steps_per_epoch = max(100, len(embodiment_paths) * 50)  # 50 large batches per embodiment per epoch
 
     active_embodiment_names = list(embodiment_paths.keys())
-    logger.info(f"Starting High-Speed Foundation Pre-training ({max_epochs} epochs, batch_size={batch_size}, steps_per_epoch={steps_per_epoch})...")
+    # Embodiment sampling policy (config `sampling`):
+    # - round_robin: equal share per embodiment (default, legacy behaviour).
+    # - proportional_sqrt: sample probability ~ sqrt(train steps). Tiny
+    #   embodiments (pen/door ~5k steps) would otherwise be recycled hundreds
+    #   of times per epoch while 1M-step ones are undersampled -> overfit.
+    sampling = str(cfg["training"].get("sampling", "round_robin"))
+    sample_weights: list[float] | None = None
+    sample_gen: torch.Generator | None = None
+    sample_prob: torch.Tensor | None = None
+    if sampling == "proportional_sqrt":
+        sample_weights = [math.sqrt(max(1, manager.buffers[n].num_steps))
+                          for n in active_embodiment_names]
+        sample_prob = torch.tensor(sample_weights) / sum(sample_weights)
+        sample_gen = torch.Generator().manual_seed(cfg["training"]["seed"] + 777)
+        logger.info(f"Proportional-sqrt sampling weights: "
+                    + ", ".join(f"{n}={w:.0f}" for n, w in zip(active_embodiment_names, sample_weights)))
+    elif sampling != "round_robin":
+        raise ValueError(f"Unknown sampling policy: {sampling}")
+
+    # LR schedule (config `lr_schedule`): constant | cosine with linear warmup.
+    lr_schedule = str(cfg["training"].get("lr_schedule", "constant"))
+    base_lr = float(cfg["training"]["learning_rate"])
+    warmup = int(cfg["training"].get("warmup_steps", 500))
+    total_steps = max(1, max_epochs * steps_per_epoch)
+    global_step = 0
+
+    def _adjust_lr() -> float:
+        if lr_schedule == "constant":
+            return base_lr
+        if lr_schedule == "cosine":
+            if global_step < warmup and warmup > 0:
+                lr = base_lr * (float(global_step + 1) / float(warmup))
+            else:
+                progress = float(global_step - warmup) / float(max(1, total_steps - warmup))
+                lr = base_lr * 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+                lr = max(lr, base_lr * 0.01)
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr
+            return lr
+        raise ValueError(f"Unknown lr_schedule: {lr_schedule}")
+
+    patience = int(cfg["training"].get("early_stopping_patience", 0))
+    logger.info(f"Starting High-Speed Foundation Pre-training ({max_epochs} epochs, batch_size={batch_size}, steps_per_epoch={steps_per_epoch}, "
+                f"sampling={sampling}, lr_schedule={lr_schedule}, patience={patience})...")
 
     best_validation_loss = float("inf")
+    epochs_no_improve = 0
     for epoch in range(1, max_epochs + 1):
         model.train()
         epoch_losses: list[float] = []
 
         for step in range(steps_per_epoch):
-            # Interleave embodiments round-robin
-            emb_name = active_embodiment_names[step % len(active_embodiment_names)]
+            if sample_weights is None:
+                emb_name = active_embodiment_names[step % len(active_embodiment_names)]
+            else:
+                assert sample_gen is not None and sample_prob is not None
+                pick = int(torch.multinomial(sample_prob, 1, generator=sample_gen).item())
+                emb_name = active_embodiment_names[pick]
             batch = manager.sample_embodiment_batch(emb_name, batch_size=batch_size, device=device)
 
             states = batch["states"]
@@ -139,6 +217,8 @@ def train_foundation(config_path: str) -> None:
             emb_idx = batch["embodiment_idx"]
 
             optimizer.zero_grad(set_to_none=True)
+            _adjust_lr()
+            global_step += 1
 
             with torch.amp.autocast("cuda", enabled=cfg["training"]["use_amp"] and device.type == "cuda", dtype=torch.bfloat16):
                 acts_pred, intents_pred, values_pred, rtg_pred, _ = model(
@@ -152,7 +232,9 @@ def train_foundation(config_path: str) -> None:
 
                 l_act = nn.functional.smooth_l1_loss(acts_pred, actions_target)
                 l_rtg = nn.functional.mse_loss(rtg_pred, rtgs)
-                l_intent = 0.01 * (intents_pred**2).mean()
+                # Intent scale comes from intent_weight alone (a second 0.01
+                # factor here previously discounted it twice to ~1e-4).
+                l_intent = (intents_pred**2).mean()
 
                 loss = (
                     cfg["training"]["action_weight"] * l_act
@@ -194,15 +276,37 @@ def train_foundation(config_path: str) -> None:
                       "protocol_version": 2}
         if validation_loss < best_validation_loss:
             best_validation_loss = validation_loss
+            epochs_no_improve = 0
             torch.save(checkpoint, output_dir / "hdml_foundation_best.pt")
+        else:
+            epochs_no_improve += 1
         if epoch % cfg["training"]["save_interval"] == 0 or epoch == max_epochs:
             torch.save(checkpoint, output_dir / f"hdml_foundation_epoch_{epoch:02d}.pt")
+        if patience > 0 and epochs_no_improve >= patience:
+            logger.info(f"Early stopping: no validation improvement for {epochs_no_improve} epochs "
+                        f"(best={best_validation_loss:.6f}).")
+            break
     logger.info("Training completed; best checkpoint selected by held-out action prediction loss")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train HDML-Foundation Model")
     parser.add_argument("--config", type=str, default="configs/hdml_foundation_full.yaml")
+    parser.add_argument("--epochs", type=int, default=None, help="Override max_epochs")
+    parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
+    parser.add_argument("--output-dir", type=str, default=None, help="Override output_dir (checkpoints)")
+    parser.add_argument("--log-dir", type=str, default=None, help="Override log_dir")
+    parser.add_argument("--scale-return", type=float, default=None, help="Override RTG scale")
     args = parser.parse_args()
+    if args.epochs is not None:
+        os.environ["HDML_FM_EPOCHS"] = str(args.epochs)
+    if args.batch_size is not None:
+        os.environ["HDML_FM_BATCH"] = str(args.batch_size)
+    if args.output_dir is not None:
+        os.environ["HDML_FM_OUTDIR"] = args.output_dir
+    if args.log_dir is not None:
+        os.environ["HDML_FM_LOGDIR"] = args.log_dir
+    if args.scale_return is not None:
+        os.environ["HDML_FM_SCALERET"] = str(args.scale_return)
     train_foundation(args.config)
 

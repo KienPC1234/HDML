@@ -50,15 +50,19 @@ class HDMLModel(nn.Module):
         mamba3_rope_fraction: float = 0.5,
         mamba3_outproj_norm: bool = False,
         mamba3_chunk: int = 64,
+        use_cfc: bool = True,
+        use_critic: bool = True,
     ) -> None:
         super().__init__()
         self.prop_dim = prop_dim
         self.action_dim = action_dim
         self.d_model = d_model
         self.d_subgoal = prop_dim if d_subgoal is None else d_subgoal
-        self.use_flow = True
+        self.use_flow = (action_policy == "flow")
         self.num_flow_steps = 4
         self.chunk_size = chunk_size
+        self.use_cfc = use_cfc
+        self.use_critic = use_critic
         # Deterministic flow solve (conditional-mean estimate) is the default for
         # evaluation: it scores much higher than stochastic sampling and is the
         # standard way to evaluate a flow-matching policy. Set False to sample.
@@ -110,7 +114,7 @@ class HDMLModel(nn.Module):
                 prop_dim=prop_dim,
             )
 
-        # 3. Generative Flow-Matching action-chunk policy and HiQC critic.
+        # 3. Generative Flow-Matching action-chunk policy and optional HiQC critic.
         flow_context_dim = self.d_subgoal + prop_dim + 1
         critic_context_dim = self.d_subgoal + prop_dim
         self.flow_context_dim = flow_context_dim
@@ -125,20 +129,27 @@ class HDMLModel(nn.Module):
                 action_dim=action_dim, chunk_size=self.chunk_size,
                 context_dim=flow_context_dim, hidden_dim=256,
             )
-        self.hiqc_critic: nn.Module = HiQCCritic(
-            state_dim=critic_context_dim, action_dim=action_dim,
-            chunk_size=self.chunk_size, hidden_dim=256,
-        )
-        # CfC filters the single executed action (per the two-tier control diagram).
-        self.cfc_filter: nn.Module = CfCActionFilter(
-            action_dim=action_dim,
-            chunk_size=1,
-            state_dim=d_model,
-            units=cfc_units,
-            backbone_units=cfc_backbone_units,
-            backbone_layers=cfc_backbone_layers,
-            residual=cfc_residual,
-        )
+        if use_critic:
+            self.hiqc_critic: nn.Module | None = HiQCCritic(
+                state_dim=critic_context_dim, action_dim=action_dim,
+                chunk_size=self.chunk_size, hidden_dim=256,
+            )
+        else:
+            self.hiqc_critic = None
+
+        # CfC filters the single executed action (can be toggled off for lightweight NPC/Game deployments).
+        if use_cfc:
+            self.cfc_filter: nn.Module | None = CfCActionFilter(
+                action_dim=action_dim,
+                chunk_size=1,
+                state_dim=d_model,
+                units=cfc_units,
+                backbone_units=cfc_backbone_units,
+                backbone_layers=cfc_backbone_layers,
+                residual=cfc_residual,
+            )
+        else:
+            self.cfc_filter = None
 
     @classmethod
     def from_config(cls, cfg: ModelConfig) -> HDMLModel:
@@ -168,6 +179,8 @@ class HDMLModel(nn.Module):
             mamba3_rope_fraction=cfg.mamba3_rope_fraction,
             mamba3_outproj_norm=cfg.mamba3_outproj_norm,
             mamba3_chunk=cfg.mamba3_chunk,
+            use_cfc=getattr(cfg, "use_cfc", True),
+            use_critic=getattr(cfg, "use_critic", True),
         )
         return model
 
@@ -184,7 +197,7 @@ class HDMLModel(nn.Module):
         hx: torch.Tensor | None = None,
         with_action: bool = True,
         action_last_only: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Shared policy computation for training and inference.
 
         Runs the multi-modal fusion, the Mamba-3 backbone, the flow-matching
@@ -204,6 +217,41 @@ class HDMLModel(nn.Module):
             next_states:     (B, T, prop_dim)
             flow_context:    (B, T, d_subgoal + prop_dim + 1)
             executed_action: (B, T, action_dim) or (B, 1, action_dim) or None
+            next_hx:         Updated CfC hidden state or None (same forward math;
+                previously discarded, now returned for stateful rollouts)
+        """
+        subgoals, latent, values, next_states, flow_context, executed_action, next_hx, _ = self.encode_with_chunk(
+            states=states,
+            rtgs=rtgs,
+            actions=actions,
+            timesteps=timesteps,
+            visual_frames=visual_frames,
+            hx=hx,
+            with_action=with_action,
+            action_last_only=action_last_only,
+        )
+        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx
+
+    def encode_with_chunk(
+        self,
+        states: torch.Tensor,
+        rtgs: torch.Tensor,
+        actions: torch.Tensor | None = None,
+        timesteps: torch.Tensor | None = None,
+        visual_frames: torch.Tensor | None = None,
+        hx: torch.Tensor | None = None,
+        with_action: bool = True,
+        action_last_only: bool = False,
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+        torch.Tensor | None, torch.Tensor | None, torch.Tensor | None,
+    ]:
+        """Same as :meth:`encode`, additionally returning the sampled action chunk.
+
+        Returns:
+            The 7 outputs of :meth:`encode` followed by
+            chunk: (B, T, chunk_size, action_dim) (or (B, 1, ...) when
+            ``action_last_only``), or None when ``with_action`` is False.
         """
         u_t = self.fusion(
             states=states,
@@ -218,7 +266,7 @@ class HDMLModel(nn.Module):
         flow_context = torch.cat([subgoals, states, rtgs], dim=-1)
 
         if not with_action:
-            return subgoals, latent, values, next_states, flow_context, None
+            return subgoals, latent, values, next_states, flow_context, None, None, None
 
         if action_last_only:
             fc = flow_context[:, -1:, :]
@@ -229,10 +277,10 @@ class HDMLModel(nn.Module):
         chunk = self._sample_chunk(fc)                    # (B, t, chunk, action_dim)
         nominal = chunk[:, :, 0, :]                       # first step of the chunk
         if self.cfc_filter is not None:
-            executed_action, _ = self.cfc_filter(nominal, lat, hx=hx)
+            executed_action, next_hx = self.cfc_filter(nominal, lat, hx=hx)
         else:
-            executed_action = nominal
-        return subgoals, latent, values, next_states, flow_context, executed_action
+            executed_action, next_hx = nominal, None
+        return subgoals, latent, values, next_states, flow_context, executed_action, next_hx, chunk
 
     def _sample_chunk(self, flow_context: torch.Tensor) -> torch.Tensor:
         """Differentiable action-chunk sample -> (B, T, chunk, action_dim).
@@ -286,11 +334,11 @@ class HDMLModel(nn.Module):
             next_states_pred: (B, T, prop_dim)
             next_hx: Updated CfC hidden state | None
         """
-        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred = self.encode(
+        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred, next_hx = self.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx,
         )
-        return actions_pred, subgoals_pred, values_pred, next_states_pred, None
+        return actions_pred, subgoals_pred, values_pred, next_states_pred, next_hx
 
     @torch.inference_mode()
     def get_action(
@@ -305,13 +353,13 @@ class HDMLModel(nn.Module):
         """Step inference for closed-loop rollouts; returns the last-step action."""
         if states.shape[1] > 1 and hx is not None:
             raise ValueError("Overlapping context must use hx=None; otherwise history is replayed twice")
-        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred = self.encode(
+        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred, next_hx = self.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx, action_last_only=True,
         )
         last_action = actions_pred[:, -1, :]
         last_subgoal = subgoals_pred[:, -1, :]
-        return last_action, None, {
+        return last_action, next_hx, {
             "subgoal": last_subgoal,
             "latent": latent_features[:, -1, :],
             "action": last_action,

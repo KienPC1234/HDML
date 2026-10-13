@@ -35,11 +35,13 @@ def test_rliable_metrics() -> None:
     assert 0.8 <= iqm <= 1.5
 
     point_est, ci_low, ci_high = stratified_bootstrap_ci(scores, num_bootstraps=100)
-    assert ci_low <= ci_high
+    assert np.isfinite(point_est) and np.isfinite(ci_low) and np.isfinite(ci_high)
+    assert ci_low <= point_est <= ci_high
 
     scores_b = scores + 0.2
-    poi = compute_probability_of_improvement(scores_b.reshape(1, -1), scores.reshape(1, -1))
-    assert poi is not None
+    p_pt, p_lo, p_hi = compute_probability_of_improvement(scores_b.reshape(1, -1), scores.reshape(1, -1))
+    assert all(np.isfinite(v) for v in (p_pt, p_lo, p_hi))
+    assert 0.0 <= p_lo <= p_pt <= p_hi <= 1.0
 
 
 def test_onnx_export(tmp_path) -> None:
@@ -57,7 +59,7 @@ def test_onnx_export_native_mamba3(tmp_path) -> None:
     import torch
     from hdml.models.hdml_model import HDMLModel
     if not torch.cuda.is_available():
-        return
+        pytest.skip("native Mamba-3 ONNX export requires CUDA")
     model = HDMLModel(
         prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2, cfc_units=16,
         use_native_mamba3=True, mamba3_headdim=32, d_state=16,

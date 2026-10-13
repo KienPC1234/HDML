@@ -40,6 +40,9 @@ training:
   action_weight: 1.0
   rtg_weight: 0.1
   intent_weight: 0.01
+  # RTG/reward scale: raw returns are O(1e2)-O(1e3); dividing by 1000 keeps the
+  # RTG-MSE term O(1) so it cannot drown the action-imitation loss.
+  scale_return: 1000.0
 
 embodiments:
   # === Existing High-Quality Datasets ===

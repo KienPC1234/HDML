@@ -42,11 +42,10 @@ training:
   use_fast_dataset: true
   use_tensorboard: false
   use_wandb: false
-  output_dir: checkpoints/rebuild_unitree/halfcheetah_placeholder
+  output_dir: checkpoints/rebuild_unitree/unitree_a1
   log_dir: logs/rebuild_unitree
   flow_weight: 1.0
   q_weight: 1.0
-  value_weight: 1.0
   action_weight: 1.0
   pave_weight: 0.001
   pave_interval: 4

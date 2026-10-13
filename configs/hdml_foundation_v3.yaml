@@ -1,0 +1,136 @@
+# HDML-Foundation v3: Practical-Embodiment Pre-training Configuration.
+# Dropped 2D toy morphologies (swimmer, reacher, inverted pendulum) and the
+# low-quality local collector data for ant/hopper/walker2d/humanoid.
+# Locomotion upgrades come from Minari medium-v0 policies (1M steps each);
+# manipulation comes from human demonstrations (Adroit hand, Franka kitchen).
+# Optimized for NVIDIA GeForce RTX 4070 SUPER (12GB VRAM).
+
+model:
+  d_model: 384
+  num_mamba_layers: 8
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  cfc_units: 96
+  cfc_backbone_units: 192
+  cfc_residual: 0.05
+  max_timesteps: 4096
+  max_embodiments: 32
+  dropout: 0.1
+  use_native_mamba3: true
+  device: cuda
+
+training:
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  warmup_steps: 500
+  max_epochs: 30
+  batch_size: 256
+  context_length: 30
+  gamma: 0.99
+  grad_clip_norm: 1.0
+  eval_interval: 5
+  save_interval: 5
+  seed: 42
+  use_amp: true
+  amp_dtype: bfloat16
+  num_workers: 2
+  pin_memory: true
+  output_dir: checkpoints/hdml_foundation_v3
+  log_dir: logs/hdml_foundation_v3
+
+  # Loss Weights
+  action_weight: 1.0
+  rtg_weight: 0.1
+  intent_weight: 0.01
+  # RTG/reward scale: raw returns are O(1e2)-O(1e3); dividing by 1000 keeps the
+  # RTG-MSE term O(1) so it cannot drown the action-imitation loss.
+  scale_return: 1000.0
+
+  # v3 training upgrades (see train_foundation.py):
+  # - sampling: round_robin (equal) | proportional_sqrt (weight ~ sqrt(train steps)).
+  #   sqrt weighting stops tiny embodiments (pen/door ~5k steps) from being
+  #   recycled hundreds of times per epoch while still showing them regularly.
+  sampling: proportional_sqrt
+  # - lr_schedule: constant | cosine (linear warmup, then cosine decay to 1%).
+  lr_schedule: cosine
+  # - early_stopping_patience: 0 disables; N stops after N epochs without val gain.
+  early_stopping_patience: 8
+
+embodiments:
+  # === Core practical assets (local, high quality) ===
+  halfcheetah:
+    prop_dim: 17
+    action_dim: 6
+    path: data/halfcheetah_v5_expert.npz
+
+  unitree_a1_locomotion:
+    prop_dim: 35
+    action_dim: 12
+    path: data/unitree_a1_trajectories.npz
+
+  unitree_a1_maze:
+    prop_dim: 53
+    action_dim: 12
+    path: data/unitree_a1_maze_trajectories.npz
+
+  humanoid_standup:
+    prop_dim: 348
+    action_dim: 17
+    path: data/humanoid_standup_foundation.npz
+
+  # === Locomotion quality upgrades (Minari medium-v0, ~1M steps each) ===
+  hopper_medium:
+    prop_dim: 11
+    action_dim: 3
+    path: data/foundation_hopper_medium.npz
+
+  walker2d_medium:
+    prop_dim: 17
+    action_dim: 6
+    path: data/foundation_walker2d_medium.npz
+
+  ant_medium:
+    prop_dim: 105
+    action_dim: 8
+    path: data/foundation_ant_medium.npz
+
+  humanoid_medium:
+    prop_dim: 348
+    action_dim: 17
+    path: data/foundation_humanoid_medium.npz
+
+  # === Dexterous hand, human demonstrations (Adroit, practical) ===
+  pen_human:
+    prop_dim: 45
+    action_dim: 24
+    path: data/foundation_pen_human.npz
+
+  door_human:
+    prop_dim: 39
+    action_dim: 28
+    path: data/foundation_door_human.npz
+
+  hammer_human:
+    prop_dim: 46
+    action_dim: 26
+    path: data/foundation_hammer_human.npz
+
+  relocate_human:
+    prop_dim: 39
+    action_dim: 30
+    path: data/foundation_relocate_human.npz
+
+  # === Quadruped navigation in mazes (AntMaze play, 1M steps) ===
+  antmaze_play:
+    prop_dim: 31
+    action_dim: 8
+    path: data/foundation_antmaze_play.npz
+
+  # === Household manipulation, undirected human play (Franka kitchen) ===
+  # NOTE: kitchen/complete-v2 remote port holds only 19 eps / 4k steps, too
+  # small to matter; partial-v2 (621 eps / 156k steps, diverse play) is used.
+  kitchen_partial:
+    prop_dim: 70
+    action_dim: 9
+    path: data/foundation_kitchen_partial.npz

@@ -30,7 +30,6 @@ training:
   log_dir: logs/halfcheetah_medium
   flow_weight: 1.0
   q_weight: 1.0
-  value_weight: 1.0
   pave_weight: 0.1
   dynamics_weight: 0.1
   grad_caps_weight: 0.05

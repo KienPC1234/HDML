@@ -33,6 +33,8 @@ class ModelConfig:
     mamba3_rope_fraction: float = 0.5
     mamba3_outproj_norm: bool = False
     mamba3_chunk: int = 64
+    use_cfc: bool = True  # enable CfC liquid action filter (can disable for low-overhead game/NPC)
+    use_critic: bool = True  # enable HiQC critic (disable if doing pure behavior cloning / imitation)
     device: str = "cuda"
 
 
@@ -49,19 +51,22 @@ class TrainingConfig:
     grad_clip_norm: float = 1.0
     flow_weight: float = 1.0
     q_weight: float = 1.0
-    value_weight: float = 1.0
     action_weight: float = 1.0
     pave_weight: float = 0.1
     pave_interval: int = 4  # compute PAVE (double backward) every N steps
     grad_caps_weight: float = 0.05
     dynamics_weight: float = 0.1
-    reg_loss_weight: float = 0.01
+    reg_loss_weight: float = 0.01  # weight of the IQL value (expectile) loss
     subgoal_loss_weight: float = 0.1
+    # AWR/IQL weighting of the action + flow losses by the HiQC advantage
+    # Q_min(s, a_chunk) - V(s) (see hdml.training.losses.advantage_weights).
     use_advantage_weighting: bool = True
     advantage_temperature: float = 1.0
-    cfc_residual: float = 0.5
     eval_interval: int = 5
     save_interval: int = 5
+    # Validation metric that selects best_model.pt. "val_action_loss" measures
+    # the executed-action error only; "val_loss" is the weighted total.
+    best_metric: str = "val_action_loss"
     seed: int = 42
     use_amp: bool = True
     amp_dtype: str = "bfloat16"  # "bfloat16" or "float16"
@@ -70,6 +75,12 @@ class TrainingConfig:
     pin_memory: bool = True
     persistent_workers: bool = True
     use_fast_dataset: bool = True
+    # Fast (pre-vectorised) datasets are copied to GPU memory when they fit
+    # under this budget; otherwise batches are gathered from pinned host memory.
+    gpu_dataset_max_gb: float = 4.0
+    # torch.compile the CfC filter (Python per-timestep loop in ncps). Math is
+    # unchanged; first steps pay a compilation cost.
+    compile_cfc: bool = False
     use_tensorboard: bool = True
     use_wandb: bool = False
     wandb_project: str = "hdml-robotics"

@@ -118,10 +118,20 @@ class QuadrupedDogEnv(gym.Env):
         """Apply an external instantaneous physical kick/impact force to the quadruped dog's torso."""
         self.data.qfrc_applied[0:3] = np.array(force_xyz, dtype=np.float64)
 
-    def render(self) -> np.ndarray | None:
+    def render(self, camera: Any = None) -> np.ndarray | None:
         if self._renderer is None:
             return None
-        self._renderer.update_scene(self.data, camera="track")
+        if camera is None:
+            cam = mujoco.MjvCamera()
+            cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            cam.lookat[:] = self.data.subtree_com[0]
+            cam.lookat[2] += 0.05
+            cam.distance = 1.75
+            cam.elevation = -12.0
+            cam.azimuth = 135.0
+            self._renderer.update_scene(self.data, camera=cam)
+        else:
+            self._renderer.update_scene(self.data, camera=camera)
         return self._renderer.render()
 
     def close(self) -> None:

@@ -239,7 +239,7 @@ class BaselineTrainer:
     def _evaluate(self) -> float:
         """Compute mean total loss over the validation split."""
         if self.val_loader is None:
-            return 0.0
+            return float("inf")
         self.model.eval()
         total: list[float] = []
         for batch in self.val_loader:
@@ -301,10 +301,10 @@ class BaselineTrainer:
                 metrics[f"train_{k}"] = v / max(1, len(self.train_loader))
 
             val_loss = self._evaluate()
-            if val_loss < self.best_loss:
+            if self.val_loader is not None and val_loss < self.best_loss:
                 self.best_loss = val_loss
                 self.save_checkpoint(self.output_dir / "best_model.pt")
-            metrics["val_loss"] = val_loss
+            metrics["val_loss"] = val_loss if self.val_loader is not None else float("nan")
 
             history.append(metrics)
             logger.info(
@@ -326,6 +326,7 @@ class BaselineTrainer:
         state = {
             "model_type": self.model_type,
             "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
             "current_step": self.current_step,
             "best_loss": self.best_loss,
             "config": self.config.__dict__,

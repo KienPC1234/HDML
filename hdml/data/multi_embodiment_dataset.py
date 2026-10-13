@@ -1,10 +1,13 @@
 """Episode-safe, split-aware buffers for multi-embodiment experiments."""
 from __future__ import annotations
+import logging
 from pathlib import Path
 from typing import Any
 import numpy as np
 import torch
 from hdml.data.episodes import load_episodes, split_episodes, pack_episodes, episode_fingerprint
+
+logger = logging.getLogger(__name__)
 
 
 class FastEmbodimentBuffer:
@@ -14,11 +17,36 @@ class FastEmbodimentBuffer:
                  validation_fraction: float = 0.2, split_seed: int = 42) -> None:
         if split not in ('train', 'validation'):
             raise ValueError('split must be train or validation')
-        self.name, self.context_length, self.embodiment_idx = name, context_length, embodiment_idx
+        self.name, self.embodiment_idx = name, embodiment_idx
         train, validation = split_episodes(load_episodes(path), validation_fraction, split_seed)
         train_obs = np.concatenate([ep['observations'] for ep in train])
         selected = train if split == 'train' else validation
-        packed = pack_episodes(selected, context_length, gamma, scale_return,
+        # Quality gate: drop degenerate episodes too short for any temporal
+        # learning (a 1-step episode would drag the whole split to context 1).
+        # Dropped episodes are logged with counts for the data report.
+        MIN_EP_LEN = 8
+        kept = [ep for ep in selected if len(ep['rewards']) >= MIN_EP_LEN]
+        n_dropped = len(selected) - len(kept)
+        if n_dropped:
+            logger.warning(
+                f"Embodiment '{name}' ({split}): dropped {n_dropped}/{len(selected)} "
+                f"degenerate episodes shorter than {MIN_EP_LEN} steps.")
+        if not kept:
+            raise ValueError(f"Embodiment '{name}' ({split}): no episodes >= {MIN_EP_LEN} steps")
+        selected = kept
+        # Per-embodiment effective context: some embodiments (e.g. pendulum,
+        # hopper) contain episodes shorter than the requested context. Shrinking
+        # the window to the split's minimum episode length keeps every window
+        # on real transitions (no zero-padding fake data). Batches are sampled
+        # per-embodiment, so variable T across embodiments is safe.
+        min_len = min(len(ep['rewards']) for ep in selected)
+        self.context_length = max(1, min(context_length, min_len))
+        if self.context_length < context_length:
+            logger.warning(
+                f"Embodiment '{name}' ({split}): {sum(1 for ep in selected if len(ep['rewards']) < context_length)}/"
+                f"{len(selected)} episodes shorter than context_length={context_length}; "
+                f"using effective context_length={self.context_length} on real data only.")
+        packed = pack_episodes(selected, self.context_length, gamma, scale_return,
                                train_obs.mean(axis=0), train_obs.std(axis=0) + 1e-6)
         self.state_mean, self.state_std = packed.pop('state_mean'), packed.pop('state_std')
         self.episode_hashes = [episode_fingerprint(ep) for ep in selected]
@@ -38,11 +66,12 @@ class FastEmbodimentBuffer:
             raise ValueError('batch_size must be positive')
         choices = torch.randint(self.num_valid_starts, (batch_size,), generator=generator)
         idx = self.valid_starts[choices, None] + torch.arange(self.context_length)[None, :]
-        return {'states': self.states[idx].to(device),
-                'actions_in': self.previous_actions[idx].to(device),
-                'actions_target': self.actions[idx].to(device),
-                'rtgs': self.rtgs[idx].to(device),
-                'timesteps': self.timesteps[idx].to(device),
+        # Buffers are pinned (pin_memory) so non_blocking H2D copies overlap GPU work.
+        return {'states': self.states[idx].to(device, non_blocking=True),
+                'actions_in': self.previous_actions[idx].to(device, non_blocking=True),
+                'actions_target': self.actions[idx].to(device, non_blocking=True),
+                'rtgs': self.rtgs[idx].to(device, non_blocking=True),
+                'timesteps': self.timesteps[idx].to(device, non_blocking=True),
                 'embodiment_name': self.name, 'embodiment_idx': self.embodiment_idx}
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+import numpy as np
 import torch
 
 from hdml.utils.config import HDMLConfig
@@ -28,18 +29,57 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     parser.add_argument("--max-episodes", type=int, default=None, help="Maximum number of dataset episodes to load")
     parser.add_argument("--her-prob", type=float, default=0.0, help="Hindsight goal relabeling probability for goal-conditioned / maze learning")
-    parser.add_argument("--amp", action="store_true", default=True, help="Enable automatic mixed precision (AMP)")
-    parser.add_argument("--no-amp", action="store_false", dest="amp", help="Disable AMP")
-    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
+    # Tri-state switches: None keeps the YAML value, the flag overrides it.
+    parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_amp")
+    parser.add_argument("--num-workers", type=int, default=None, help="Override training.num_workers (non-fast datasets only)")
     parser.add_argument("--stride", type=int, default=1, help="Subsampling stride along trajectories for high-speed training")
-    parser.add_argument("--resume", type=str, default=None, help="Resume training from a checkpoint .pt (keeps the LR schedule)")
-    parser.add_argument("--fast-data", action="store_true", default=True, help="Use pre-vectorized contiguous tensor dataset")
-    parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases cloud logging")
-    parser.add_argument("--wandb-project", type=str, default="hdml-robotics", help="WandB project name")
+    parser.add_argument("--resume", type=str, default=None, help="Resume from a checkpoint .pt (restores optimizer, scaler, RNG, epoch and LR schedule)")
+    parser.add_argument("--fast-data", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_fast_dataset")
+    parser.add_argument("--advantage-weighting", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_advantage_weighting")
+    parser.add_argument("--best-metric", type=str, default=None, help="Override training.best_metric (e.g. val_action_loss, val_loss)")
+    parser.add_argument("--compile-cfc", action=argparse.BooleanOptionalAction, default=None, help="Override training.compile_cfc")
+    parser.add_argument("--cfc", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable CfC action filter (e.g. --no-cfc for lightweight NPC)")
+    parser.add_argument("--critic", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable HiQC critic (e.g. --no-critic for pure imitation)")
+    parser.add_argument("--policy", type=str, default=None, choices=["flow", "gaussian"], help="Action policy type ('flow' or 'gaussian')")
+    parser.add_argument("--wandb", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_wandb")
+    parser.add_argument("--wandb-project", type=str, default=None, help="Override training.wandb_project")
     parser.add_argument("--wandb-name", type=str, default=None, help="WandB experiment run name")
-    parser.add_argument("--tensorboard", action="store_true", default=True, help="Enable local TensorBoard logging")
-    parser.add_argument("--no-tensorboard", action="store_false", dest="tensorboard", help="Disable TensorBoard logging")
+    parser.add_argument("--tensorboard", action=argparse.BooleanOptionalAction, default=None, help="Override training.use_tensorboard")
     return parser.parse_args()
+
+
+def _apply_overrides(cfg: HDMLConfig, args: argparse.Namespace) -> None:
+    """Apply explicitly-passed CLI values on top of the YAML training config."""
+    training_overrides: dict[str, Any] = {
+        "seed": args.seed,
+        "max_epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "use_amp": args.amp,
+        "num_workers": args.num_workers,
+        "use_fast_dataset": args.fast_data,
+        "use_advantage_weighting": args.advantage_weighting,
+        "best_metric": args.best_metric,
+        "compile_cfc": args.compile_cfc,
+        "use_wandb": args.wandb,
+        "wandb_project": args.wandb_project,
+        "wandb_run_name": args.wandb_name,
+        "use_tensorboard": args.tensorboard,
+    }
+    for key, value in training_overrides.items():
+        if value is not None:
+            setattr(cfg.training, key, value)
+
+    # Model architecture overrides for fast user experimentation / NPC deployment
+    if args.cfc is not None:
+        cfg.model.use_cfc = args.cfc
+    if args.critic is not None:
+        cfg.model.use_critic = args.critic
+    if args.policy is not None:
+        cfg.model.action_policy = args.policy
+    if args.output_dir is not None:
+        cfg.training.output_dir = args.output_dir
+        cfg.training.log_dir = str(Path(args.output_dir) / "logs")
 
 
 def main() -> None:
@@ -47,23 +87,7 @@ def main() -> None:
 
     # Load configuration
     cfg = HDMLConfig.from_yaml(args.config)
-    if args.seed is not None:
-        cfg.training.seed = args.seed
-    if args.output_dir is not None:
-        cfg.training.output_dir = args.output_dir
-        cfg.training.log_dir = str(Path(args.output_dir) / "logs")
-    if args.epochs is not None:
-        cfg.training.max_epochs = args.epochs
-    if args.batch_size is not None:
-        cfg.training.batch_size = args.batch_size
-    if args.lr is not None:
-        cfg.training.learning_rate = args.lr
-    cfg.training.use_amp = args.amp
-    cfg.training.num_workers = args.num_workers
-    cfg.training.use_tensorboard = args.tensorboard
-    cfg.training.use_wandb = args.wandb
-    cfg.training.wandb_project = args.wandb_project
-    cfg.training.wandb_run_name = args.wandb_name
+    _apply_overrides(cfg, args)
 
     device = torch.device(args.device if torch.cuda.is_available() and args.device == "cuda" else "cpu")
     logger.info(f"Target execution hardware: {device}")
@@ -94,12 +118,14 @@ def main() -> None:
         if args.max_episodes is not None and len(trajectories) > args.max_episodes:
             trajectories = trajectories[: args.max_episodes]
 
-    # Split train/val
+    # Split train/val deterministically to avoid collection-order bias
+    rng = np.random.default_rng(cfg.training.seed)
+    perm = rng.permutation(len(trajectories))
     split_idx = max(1, int(len(trajectories) * 0.85))
-    train_trajs = trajectories[:split_idx]
-    val_trajs = trajectories[split_idx:] if split_idx < len(trajectories) else None
+    train_trajs = [trajectories[i] for i in perm[:split_idx]]
+    val_trajs = [trajectories[i] for i in perm[split_idx:]] if split_idx < len(trajectories) else None
 
-    dataset_cls = FastTensorTrajectoryDataset if args.fast_data else TrajectoryDataset
+    dataset_cls = FastTensorTrajectoryDataset if cfg.training.use_fast_dataset else TrajectoryDataset
 
     train_dataset = dataset_cls(
         trajectories=train_trajs,
@@ -125,6 +151,11 @@ def main() -> None:
     cfg.model.prop_dim = train_dataset.prop_dim
     cfg.model.action_dim = train_dataset.action_dim
 
+    # Persist effective run configuration to output directory
+    out_dir = Path(cfg.training.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfg.to_yaml(out_dir / "effective_config.yaml")
+
     # Instantiate Model
     model = HDMLModel.from_config(cfg.model)
     logger.info(
@@ -140,19 +171,12 @@ def main() -> None:
         device=device,
     )
 
-    # Optional resume from a checkpoint (continues the global step counter so the
-    # LR schedule stays monotonic).
+    # Optional resume from a checkpoint
     if args.resume is not None:
-        ck = torch.load(args.resume, map_location=device, weights_only=False)
-        model.load_state_dict(ck["model_state_dict"])
-        if "optimizer_state_dict" in ck:
-            trainer.optimizer.load_state_dict(ck["optimizer_state_dict"])
-        trainer.current_step = int(ck.get("current_step", 0))
-        trainer.best_loss = float(ck.get("best_loss", float("inf")))
-        logger.info(f"Resumed from {args.resume} at step {trainer.current_step}.")
+        trainer.load_checkpoint(args.resume)
 
     history = trainer.train()
-    logger.info(f"Training finished. Best Loss: {trainer.best_loss:.4f}")
+    logger.info(f"Training finished. Best Loss ({cfg.training.best_metric}): {trainer.best_loss:.4f}")
 
 
 if __name__ == "__main__":

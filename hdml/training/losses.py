@@ -5,6 +5,49 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def advantage_weights(
+    q1_pred: torch.Tensor,
+    q2_pred: torch.Tensor,
+    values_pred: torch.Tensor,
+    mask: torch.Tensor,
+    temperature: float,
+) -> torch.Tensor:
+    """Bounded AWR/IQL advantage weights for the policy (action / flow) objective.
+
+    w(s, a) = clip(exp(norm(Q_min(s, a) - V(s)) / temperature), 0.1, 10),
+    renormalised to unit mean over valid tokens. The advantage is standardised
+    over the valid tokens of the batch so the weighting is invariant to the
+    return scale. Weights are detached (no gradient into critic or value head).
+
+    Args:
+        q1_pred: HiQC critic output, (B, T, 1).
+        q2_pred: HiQC critic output, (B, T, 1).
+        values_pred: Backbone value head output, (B, T, 1).
+        mask: Validity mask, (B, T).
+        temperature: AWR temperature (> 0).
+
+    Returns:
+        Weights of shape (B, T, 1), float32, zero on padded tokens.
+    """
+    if temperature <= 0.0:
+        raise ValueError(f"advantage temperature must be > 0, got {temperature}")
+    with torch.no_grad():
+        q = torch.minimum(q1_pred, q2_pred).float()  # conservative Q estimate
+        adv = q - values_pred.float()
+        valid = mask.unsqueeze(-1).float()
+        num_valid = valid.sum().clamp(min=1.0)
+        adv_mean = (adv * valid).sum() / num_valid
+        adv_var = (((adv - adv_mean) ** 2) * valid).sum() / num_valid
+        adv_std = torch.sqrt(adv_var.clamp(min=1e-8))
+        adv_norm = (adv - adv_mean) / adv_std
+        # Bounded exponential weighting; never zeroes out part of the dataset.
+        weight = torch.clamp(torch.exp(adv_norm / temperature), min=0.1, max=10.0)
+        weight = weight * valid
+        weight_sum = weight.sum().clamp(min=1.0)
+        weight = weight * (num_valid / weight_sum)
+    return weight
+
+
 class HDMLLoss(nn.Module):
     """
     HDML Comprehensive Loss Function.
@@ -61,36 +104,8 @@ class HDMLLoss(nn.Module):
         values_pred: torch.Tensor,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        """DIVO-style binary advantage weights for the flow-matching objective.
-
-        w(s, a) = 1[Q(s, a) > V(s)] * exp((Q(s, a) - V(s)) / beta)
-
-        Args:
-            q1_pred/q2_pred: HiQC critic outputs, shape (B, T, 1).
-            values_pred: Backbone value head output, shape (B, T, 1).
-            mask: Validity mask, shape (B, T).
-
-        Returns:
-            Advantage weights normalized to unit mean over valid tokens, shape (B, T, 1).
-        """
-        with torch.no_grad():
-            q = torch.minimum(q1_pred, q2_pred)  # conservative Q estimate
-            adv = q - values_pred
-            # Normalize the advantage to zero-mean unit-variance over valid tokens so
-            # the exponential weighting is invariant to the reward scale.
-            valid = mask.unsqueeze(-1)
-            num_valid = valid.sum().clamp(min=1.0)
-            adv_mean = (adv * valid).sum() / num_valid
-            adv_var = (((adv - adv_mean) ** 2) * valid).sum() / num_valid
-            adv_std = torch.sqrt(adv_var.clamp(min=1e-8))
-            adv_norm = (adv - adv_mean) / adv_std
-            # Bounded exponential weighting (AWR/IQL formulation) - do NOT zero out half the dataset
-            weight = torch.clamp(torch.exp(adv_norm / self.advantage_temperature), min=0.1, max=10.0)
-            weight = weight * valid
-            # Normalize so the weights have unit mean over valid tokens (stable loss scale).
-            weight_sum = weight.sum().clamp(min=1.0)
-            weight = weight * (num_valid / weight_sum)
-        return weight
+        """Bounded AWR/IQL advantage weights (see :func:`advantage_weights`)."""
+        return advantage_weights(q1_pred, q2_pred, values_pred, mask, self.advantage_temperature)
 
     def forward(
         self,
@@ -173,23 +188,27 @@ class HDMLLoss(nn.Module):
         else:
             pave_loss = torch.tensor(0.0, device=mask.device)
 
-        # --- 5. Grad-CAPS Loss (Action Smoothness on predicted chunk) ---
+        # --- 5. Grad-CAPS Loss (Action Smoothness WITHIN the predicted chunk) ---
+        # Matches HDMLTrainer: pred_chunk is (B, T, c, D); differentiate along
+        # the chunk axis c (dim=-2) with per-context-step mask weighting.
         if self.grad_caps_weight > 0.0 and pred_velocity is not None:
             # Reconstructed predicted action chunk (noise is None for Gaussian head).
             pred_chunk = pred_velocity if noise is None else pred_velocity + noise
-            if pred_chunk.ndim == 4 and pred_chunk.shape[1] > 2:
-                accel = pred_chunk[:, 2:] - 2 * pred_chunk[:, 1:-1] + pred_chunk[:, :-2]  # (B, T-2, c, d)
-                accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T-2)
-                grad_caps_loss = (accel_norm * mask[:, 2:]).sum() / torch.clamp(mask[:, 2:].sum(), min=1.0)
+            if pred_chunk.ndim == 4 and pred_chunk.shape[-2] > 2:
+                accel = pred_chunk[:, :, 2:] - 2 * pred_chunk[:, :, 1:-1] + pred_chunk[:, :, :-2]  # (B, T, c-2, d)
+                accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T)
+                grad_caps_loss = (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
             else:
                 grad_caps_loss = torch.tensor(0.0, device=mask.device)
         else:
             grad_caps_loss = torch.tensor(0.0, device=mask.device)
 
         # --- 6. Forward Dynamics Predictor Loss ---
-        if self.dynamics_weight > 0.0 and next_states_pred is not None and next_states_pred.shape[1] > 1:
-            raw_dyn_loss = F.mse_loss(next_states_pred[:, :-1], target_states[:, 1:], reduction="none")
-            dyn_mask = mask[:, 1:].unsqueeze(-1)
+        # Matches HDMLTrainer: next_states_pred directly regresses the dataset
+        # "next_states" field, i.e. s_{t+c} after the action chunk (dataset.py).
+        if self.dynamics_weight > 0.0 and next_states_pred is not None:
+            raw_dyn_loss = F.mse_loss(next_states_pred, target_states, reduction="none")
+            dyn_mask = mask.unsqueeze(-1)
             dyn_loss = (raw_dyn_loss * dyn_mask).sum() / torch.clamp(dyn_mask.sum() * next_states_pred.shape[-1], min=1.0)
         else:
             dyn_loss = torch.tensor(0.0, device=mask.device)
@@ -203,6 +222,9 @@ class HDMLLoss(nn.Module):
             + self.grad_caps_weight * grad_caps_loss
             + self.dynamics_weight * dyn_loss
         )
+
+        if not torch.isfinite(total_loss).all():
+            raise RuntimeError(f"Non-finite HDMLLoss: {float(total_loss.item())}")
 
         loss_dict = {
             "total_loss": float(total_loss.item()),
