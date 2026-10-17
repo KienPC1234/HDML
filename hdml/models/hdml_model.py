@@ -52,6 +52,7 @@ class HDMLModel(nn.Module):
         mamba3_chunk: int = 64,
         use_cfc: bool = True,
         use_critic: bool = True,
+        num_flow_steps: int = 4,
     ) -> None:
         super().__init__()
         self.prop_dim = prop_dim
@@ -59,7 +60,7 @@ class HDMLModel(nn.Module):
         self.d_model = d_model
         self.d_subgoal = prop_dim if d_subgoal is None else d_subgoal
         self.use_flow = (action_policy == "flow")
-        self.num_flow_steps = 4
+        self.num_flow_steps = int(num_flow_steps)
         self.chunk_size = chunk_size
         self.use_cfc = use_cfc
         self.use_critic = use_critic

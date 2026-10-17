@@ -68,3 +68,21 @@ def test_onnx_export_native_mamba3(tmp_path) -> None:
     export_hdml_to_onnx(model, str(onnx_file), prop_dim=17, action_dim=6, context_length=10)
     assert onnx_file.exists()
     assert onnx_file.stat().st_size > 0
+
+
+def test_onnx_export_action_only_and_without_cfc(tmp_path) -> None:
+    from hdml.models.hdml_model import HDMLModel
+    model = HDMLModel(
+        prop_dim=17, action_dim=6, d_model=64, num_mamba_layers=2,
+        use_cfc=False, action_policy="gaussian", use_critic=False,
+        use_native_mamba3=False,
+    )
+    onnx_file = tmp_path / "model_action_only.onnx"
+    res = export_hdml_to_onnx(
+        model, str(onnx_file), prop_dim=17, action_dim=6, context_length=10,
+        action_only=True, verify=True,
+    )
+    assert onnx_file.exists()
+    assert res["action_only"] is True
+    assert res["max_numerical_diff"] < 1e-3
+

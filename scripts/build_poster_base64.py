@@ -13,7 +13,8 @@ def main() -> None:
     assets_dir = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_assets"
     output_html = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt.html"
     output_b64_copy = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt_base64.html"
-    artifact_dir = Path("/home/kien/.gemini/antigravity/brain/e4ab5a58-4d69-4c54-8132-4a638daa7b98")
+    artifact_dir_env = os.environ.get("ANTIGRAVITY_ARTIFACT_DIR")
+    artifact_dir = Path(artifact_dir_env) if artifact_dir_env else None
 
     images = {
         "a1_thumb.png": "image/png",
@@ -451,7 +452,7 @@ def main() -> None:
 
     output_html.write_text(html_content, encoding="utf-8")
     output_b64_copy.write_text(html_content, encoding="utf-8")
-    if artifact_dir.exists():
+    if artifact_dir and artifact_dir.exists():
         (artifact_dir / "poster_khkt.html").write_text(html_content, encoding="utf-8")
 
     print(f"Successfully generated standalone Base64 poster at: {output_html}")

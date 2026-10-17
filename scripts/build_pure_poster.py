@@ -14,8 +14,8 @@ def main() -> None:
     repo_root = Path("/data/HDML_Model")
     assets_dir = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_assets"
     output_html = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt.html"
-    output_b64 = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt_base64.html"
-    artifact_dir = Path("/home/kien/.gemini/antigravity/brain/e4ab5a58-4d69-4c54-8132-4a638daa7b98")
+    artifact_dir_env = os.environ.get("ANTIGRAVITY_ARTIFACT_DIR")
+    artifact_dir = Path(artifact_dir_env) if artifact_dir_env else None
 
     images = {
         "a1_thumb.png": "image/png",
@@ -913,7 +913,7 @@ def main() -> None:
 
     output_html.write_text(html_content, encoding="utf-8")
     output_b64.write_text(html_content, encoding="utf-8")
-    if artifact_dir.exists():
+    if artifact_dir and artifact_dir.exists():
         (artifact_dir / "poster_khkt.html").write_text(html_content, encoding="utf-8")
 
     print(f"Successfully generated clean human-written poster at: {output_html}")

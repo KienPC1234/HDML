@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hdml"
 version = "0.1.0"
-description = "Hierarchical Decision Mamba-Liquid for 3D Robot Control"
+description = "Hierarchical Decision Mamba-Liquid for Embodied AI, Robotics, and Real-Time Autonomous Interactive Agents"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

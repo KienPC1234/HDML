@@ -71,5 +71,7 @@ python scripts/measure_closed_loop.py \
 
 - [README.md](README.md): Main project overview, installation, and usage.
 - [REPRODUCIBILITY.md](REPRODUCIBILITY.md): Protocol for verifying and reproducing benchmark results.
+- [docs/ONNX_DEPLOYMENT.md](docs/ONNX_DEPLOYMENT.md): Production ONNX export reference, C#/C++/Python game engine runtime integration, and latency benchmarks.
+- [docs/TRAINING_AND_NPC_DEPLOYMENT.md](docs/TRAINING_AND_NPC_DEPLOYMENT.md): Complete guide for training offline policies and deploying game NPCs and robotics.
 - [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md): Detailed rebuild log, architectural audit, and run artifacts.
 - [docs/AI_ASSISTANCE.md](docs/AI_ASSISTANCE.md): Disclosure of AI-assisted engineering and administrative tasks.

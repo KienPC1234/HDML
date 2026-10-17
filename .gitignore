@@ -224,14 +224,26 @@ __marimo__/
 *.npz
 *.onnx
 *.onnx.data
-!data/.gitkeep
+checkpoints/*
 !checkpoints/.gitkeep
+!data/.gitkeep
+
+# FPS-Arena experiment, game engine & artifacts
+botgame-fpsarea/
+hdml_player_extension/
+checkpoints/fps_arena*/
+configs/fps_arena*
+docs/fps_arena*
+scripts/*fps*
+scripts/rollout_pool.js
+scripts/tournament_score.js
+data/fps_arena_*.json
+data/*_norm.json
 
 # Runtime logs
 logs/
 *.log
 results
-
 
 # LaTeX build artifacts
 *.aux
@@ -245,3 +257,17 @@ results
 
 # Excluded documents
 KH_thi_KHKT_TP_2026-2027/
+
+# .NET and C# build artifacts
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+.dotnet/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+tests_csharp/bin/
+tests_csharp/obj/

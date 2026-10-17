@@ -35,6 +35,8 @@ class ModelConfig:
     mamba3_chunk: int = 64
     use_cfc: bool = True  # enable CfC liquid action filter (can disable for low-overhead game/NPC)
     use_critic: bool = True  # enable HiQC critic (disable if doing pure behavior cloning / imitation)
+    chunk_size: int = 4  # action chunk horizon
+    num_flow_steps: int = 4  # Euler integration steps for flow matching
     device: str = "cuda"
 
 
