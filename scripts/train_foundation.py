@@ -11,13 +11,13 @@ import logging
 import math
 import os
 from pathlib import Path
-import yaml
 import numpy as np
 import torch
 import torch.nn as nn
 
 from hdml.models.foundation import HDMLFoundationModel
 from hdml.data.multi_embodiment_dataset import FastMultiEmbodimentManager
+from hdml.utils.foundation_config import load_foundation_config
 
 
 def setup_logger(log_dir: str) -> logging.Logger:
@@ -38,8 +38,7 @@ def setup_logger(log_dir: str) -> logging.Logger:
 
 
 def train_foundation(config_path: str) -> None:
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_foundation_config(config_path)
 
     # CLI overrides via environment (set by __main__ below; keeps the
     # function signature stable for programmatic callers).
@@ -163,7 +162,7 @@ def train_foundation(config_path: str) -> None:
                           for n in active_embodiment_names]
         sample_prob = torch.tensor(sample_weights) / sum(sample_weights)
         sample_gen = torch.Generator().manual_seed(cfg["training"]["seed"] + 777)
-        logger.info(f"Proportional-sqrt sampling weights: "
+        logger.info("Proportional-sqrt sampling weights: "
                     + ", ".join(f"{n}={w:.0f}" for n, w in zip(active_embodiment_names, sample_weights)))
     elif sampling != "round_robin":
         raise ValueError(f"Unknown sampling policy: {sampling}")

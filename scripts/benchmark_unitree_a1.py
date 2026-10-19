@@ -53,7 +53,6 @@ def evaluate_unitree_a1(
     lengths: list[int] = []
     smoothnesses: list[float] = []
     latencies: list[float] = []
-    forward_velocities: list[float] = []
     max_rolls: list[float] = []
     recovery_times: list[float] = []
 
@@ -170,7 +169,7 @@ def evaluate_unitree_a1(
     std_ret = float(np.std(returns))
     mean_lat = float(np.mean(latencies))
     freq_hz = 1000.0 / max(1e-4, mean_lat)
-    completion_rate = float(sum(l >= config.env.max_episode_steps for l in lengths) / max(1, len(lengths)) * 100.0)
+    completion_rate = float(sum(length >= config.env.max_episode_steps for length in lengths) / max(1, len(lengths)) * 100.0)
     mean_jerk = float(np.mean(smoothnesses))
     mean_max_roll_deg = float(np.degrees(np.mean(max_rolls)))
     mean_rec_sec = float(np.mean(recovery_times)) if recovery_times else 0.0

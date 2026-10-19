@@ -18,18 +18,6 @@ Same 100k-step dataset, same hyper-params, 10 episodes (`results/rebuild_unitree
 | MLP-BC | 0.08M | 0.31 ms | 1343.9 | 0.0663 |
 | Diffusion | 0.16M | 6.89 ms | 960.3 | 0.2118 |
 
-## Benchmark (Adaptive Combat NPC Arena, 30 Episodes across Archetypes)
-
-Evaluated in closed-loop Circular Colosseum against Dynamic Player Archetypes (Berserker, Zoner, Turtle):
-
-| Model / Architecture | Policy Type | Win Rate | Dodge Success | Spacing Err | Jerk (Smoothness) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Pure Mamba Combat NPC** | Lean Mamba-3 + 2-Step Flow | **41.7%** | **57.1%** | 4.68 m | **0.0819** |
-| Rule-Based Minimax Teacher | Handcrafted Expert | 56.7% | 37.5% | **1.84 m** | 0.1962 |
-| Random Exploration Baseline | Uniform Stochastic | 30.0% | 19.6% | 4.26 m | 1.1695 |
-
-*Note: Pure Mamba NPC achieves active central engagement (41.7% win rate, 57.1% dodge rate) with inward restitution physics and distance-based approach shaping, eliminating wall-hugging behavior while maintaining smooth motion (jerk = 0.0819).*
-
 ## Production ONNX & C# Game Runtime (`tests_csharp/`)
 
 Inference latency and memory footprint measured on CPU with `Microsoft.ML.OnnxRuntime 1.31.0` under .NET 8:
@@ -37,7 +25,6 @@ Inference latency and memory footprint measured on CPU with `Microsoft.ML.OnnxRu
 | Model Target | Batch / Context | P50 Latency | Rate | Working Set (RAM) | Parity vs PyTorch |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Unitree A1 Locomotion** (`unitree_a1_action_only.onnx`) | 1 / 20 | **1.80 ms** | 556 Hz | 85.0 MB | $3.28 \times 10^{-7}$ |
-| **Adaptive Combat NPC** (`combat_npc_action_only.onnx`) | 1 / 20 | **3.89 ms** | 256 Hz | 86.0 MB | $3.28 \times 10^{-7}$ |
 
 ## Quickstart
 
@@ -50,8 +37,13 @@ pip install -r requirements.txt && pip install -e .
 # Test suite (Python + C# ONNX parity)
 pytest tests/ tests_cpu/ -q
 
+# Export a checkpoint to ONNX (deployment/*.onnx is generated, not committed)
+python scripts/export_onnx.py --config configs/unitree_a1_cfc_strong.yaml \
+  --checkpoint checkpoints/rebuild_unitree/unitree_a1/best_model.pt \
+  --output deployment/unitree_a1_action_only.onnx --action-only
+
 # Run C# ONNX benchmark on CPU
-dotnet run --project tests_csharp -- --model deployment/combat_npc_action_only.onnx --prop-dim 34 --action-dim 5 --iters 100
+dotnet run --project tests_csharp -- --model deployment/unitree_a1_action_only.onnx --prop-dim 35 --action-dim 12 --iters 100
 
 # Benchmark Unitree A1 robot
 python scripts/benchmark_unitree_a1.py
@@ -61,7 +53,6 @@ python scripts/benchmark_unitree_a1.py
 
 - [SETUP_AND_DOCS.md](SETUP_AND_DOCS.md): Full installation, hardware setup, and reproducible benchmarks.
 - [docs/ONNX_DEPLOYMENT.md](docs/ONNX_DEPLOYMENT.md): ONNX export pipeline, C# Unity Sentis integration, and C++ game engine runtime.
-- [docs/TRAINING_AND_NPC_DEPLOYMENT.md](docs/TRAINING_AND_NPC_DEPLOYMENT.md): Closed-loop combat arena training and adaptation protocol.
 
 ## License
 

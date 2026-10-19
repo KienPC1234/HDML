@@ -22,7 +22,7 @@ COLORS = ["#059669", "#d97706", "#7c3aed", "#475569", "#e11d48", "#2563eb"]
 
 
 def main() -> None:
-    repo_root = Path("/data/HDML_Model")
+    repo_root = Path(__file__).resolve().parents[1]
     out_dir = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_assets"
     fair_path = repo_root / "results/rebuild_unitree/fair_benchmark.json"
     multi_path = repo_root / "results/rebuild_unitree/multiseed.json"
@@ -38,7 +38,7 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=(5.6, 4.4), dpi=250)
     x = np.arange(len(ORDER))
-    bars = ax.bar(x, mmean, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
+    ax.bar(x, mmean, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
     ax.errorbar(x, mmean, yerr=mstd, fmt="none", ecolor="#0f172a", capsize=5, lw=2.0)
 
     for xi, v in zip(x, mmean):
@@ -63,7 +63,7 @@ def main() -> None:
     jerk = [fair[n]["jerk"] for n in FULL_NAMES]
 
     fig, ax = plt.subplots(figsize=(5.6, 4.4), dpi=250)
-    bars = ax.bar(x, jerk, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
+    ax.bar(x, jerk, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
 
     for xi, v in zip(x, jerk):
         ax.text(xi, v * 1.14, f"{v:.3f}".replace(".", ","), ha="center", fontsize=13.5, fontweight="bold", color="#0f172a")
@@ -91,7 +91,7 @@ def main() -> None:
     ret42 = [fair[n]["return_mean"] for n in FULL_NAMES]
 
     fig, ax = plt.subplots(figsize=(5.6, 4.4), dpi=250)
-    bars = ax.bar(x, ret42, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
+    ax.bar(x, ret42, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
 
     for xi, v in zip(x, ret42):
         ax.text(xi, v + 35, f"{v:.0f}", ha="center", fontsize=14, fontweight="bold", color="#0f172a")
@@ -115,7 +115,7 @@ def main() -> None:
     lat = [fair[n]["latency_ms"] for n in FULL_NAMES]
 
     fig, ax = plt.subplots(figsize=(5.6, 4.4), dpi=250)
-    bars = ax.bar(x, lat, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
+    ax.bar(x, lat, color=COLORS, edgecolor="#0f172a", linewidth=1.5, width=0.74)
 
     for xi, v in zip(x, lat):
         if xi == 0:  # HDML

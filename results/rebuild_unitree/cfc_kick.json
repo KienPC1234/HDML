@@ -1,0 +1,46 @@
+{
+  "cfc_action_contribution_abs_mean": 0.006941628056423118,
+  "kick_step": 200,
+  "results": {
+    "with_cfc": [
+      {
+        "force": 50.0,
+        "peak_roll_deg": 7.04,
+        "post_roll_rms_deg": 1.69,
+        "return_mean": 1489.1
+      },
+      {
+        "force": 200.0,
+        "peak_roll_deg": 28.2,
+        "post_roll_rms_deg": 4.18,
+        "return_mean": 1445.8
+      },
+      {
+        "force": 400.0,
+        "peak_roll_deg": 50.94,
+        "post_roll_rms_deg": 15.53,
+        "return_mean": 293.1
+      }
+    ],
+    "no_cfc": [
+      {
+        "force": 50.0,
+        "peak_roll_deg": 7.13,
+        "post_roll_rms_deg": 1.71,
+        "return_mean": 1483.0
+      },
+      {
+        "force": 200.0,
+        "peak_roll_deg": 27.7,
+        "post_roll_rms_deg": 3.9,
+        "return_mean": 1455.6
+      },
+      {
+        "force": 400.0,
+        "peak_roll_deg": 50.43,
+        "post_roll_rms_deg": 15.32,
+        "return_mean": 294.8
+      }
+    ]
+  }
+}

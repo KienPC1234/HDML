@@ -12,7 +12,7 @@ import torch
 
 from hdml.utils.config import HDMLConfig
 from hdml.models.hdml_model import HDMLModel
-from hdml.deployment.onnx_exporter import export_hdml_to_onnx
+from hdml.deployment.onnx_exporter import export_hdml_to_onnx, infer_native_mamba3
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export trained HDML model to optimized ONNX.")
-    parser.add_argument("--config", type=str, default="configs/combat_arena_npc.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/combat_arena/best_combat_npc.pt", help="Path to checkpoint .pt")
-    parser.add_argument("--output", type=str, default="deployment/combat_npc_full.onnx", help="Output .onnx file path")
+    parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/rebuild_long/halfcheetah_v5/best_model.pt", help="Path to checkpoint .pt")
+    parser.add_argument("--output", type=str, default="deployment/hdml_halfcheetah.onnx", help="Output .onnx file path")
     parser.add_argument("--opset", type=int, default=17, help="ONNX opset version")
     parser.add_argument("--action-only", action="store_true", help="Export lean ONNX graph with single 'action' output")
     parser.add_argument("--context-length", type=int, default=0, help="Override sequence context length")
@@ -169,6 +169,19 @@ def main() -> None:
     logger.info(f"Loading checkpoint: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
+    # The YAML may not describe the architecture the checkpoint was trained
+    # with (e.g. configs/unitree_a1_default.yaml omits use_native_mamba3). The
+    # state_dict is authoritative; override instead of failing load_state_dict.
+    inferred_native = infer_native_mamba3(ckpt["model_state_dict"])
+    if inferred_native is not None and inferred_native != cfg.model.use_native_mamba3:
+        logger.warning(
+            "Config says use_native_mamba3=%s but checkpoint keys indicate %s; "
+            "overriding for export.",
+            cfg.model.use_native_mamba3,
+            inferred_native,
+        )
+        cfg.model.use_native_mamba3 = inferred_native
+
     model = HDMLModel.from_config(cfg.model).cpu()
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
@@ -255,7 +268,7 @@ def main() -> None:
     print(f"Model File Size   : {res['file_size_mb']:.2f} MB")
     print(f"Max Absolute Diff : {res['max_numerical_diff']:.6e} (PyTorch vs ONNX Runtime)")
     print(f"Inference Latency : {latency_ms:.2f} ms / step on CPU ({1000.0 / latency_ms:.0f} Hz)")
-    print(f"Verification      : PASSED (portable PyTorch vs ONNX within configured tolerance)")
+    print("Verification      : PASSED (portable PyTorch vs ONNX within configured tolerance)")
     print("=" * 80 + "\n")
 
 

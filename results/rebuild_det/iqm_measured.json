@@ -1,0 +1,23 @@
+{
+  "checkpoint": "checkpoints/rebuild_long/halfcheetah_v5/best_model.pt",
+  "env": "HalfCheetah-v5",
+  "episodes_per_seed": 10,
+  "seeds": [
+    42,
+    100,
+    2024
+  ],
+  "per_seed_mean_norm": {
+    "42": 41.19103140830994,
+    "100": 28.993898844718935,
+    "2024": 34.91326694488525
+  },
+  "pooled_mean_norm": 35.032732399304706,
+  "pooled_std_norm": 37.466955968058514,
+  "pooled_iqm": 23.520926728844643,
+  "iqm_ci95": [
+    8.653330176323662,
+    46.62346798330545
+  ],
+  "n_episodes": 30
+}

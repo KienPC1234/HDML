@@ -1,31 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
 import logging
 import math
 from pathlib import Path
+from typing import Any
 import numpy as np
-import torch
 
 from hdml.data.collector import discount_cumsum
 from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
+from hdml.evaluation.rollout import leg_ik
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("CollectUnitreeA1")
-
-
-def leg_ik(x: float, z: float, l1: float = 0.20, l2: float = 0.20) -> tuple[float, float]:
-    """Analytic 2-Link Inverse Kinematics for Unitree A1 thigh and calf."""
-    r2 = x**2 + z**2
-    r = math.sqrt(r2)
-    cos_q2 = max(-1.0, min(1.0, (r2 - l1**2 - l2**2) / (2 * l1 * l2)))
-    q2 = -math.acos(cos_q2)  # backward knee
-    beta = math.atan2(-x, -z)
-    cos_gamma = max(-1.0, min(1.0, r / (2 * l1)))
-    gamma = math.acos(cos_gamma)
-    q1 = beta + gamma
-    return q1, q2
 
 
 class UnitreeA1CPGPolicy:

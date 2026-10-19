@@ -1,0 +1,2 @@
+UNSEEN (holdout, walker excluded): before=0.261275 after=0.026969 jerk=0.18127169460058212 time=46.7s trainable=382278 exposure=not_seen_in_recorded_manifest
+SEEN (v3, walker included):       before=0.239744 after=0.028319 jerk=0.16575149819254875 time=21.8s trainable=382278 exposure=seen_or_unverified

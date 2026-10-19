@@ -1,0 +1,60 @@
+{
+  "protocol_version": 2,
+  "target": "door_human",
+  "seed": 42,
+  "evaluation_kind": "held_out_prediction_after_adapter_fit",
+  "pretraining_exposure": "seen_or_unverified",
+  "closed_loop_control_evaluated": false,
+  "train_episodes": 20,
+  "validation_episodes": 5,
+  "train_episode_hashes": [
+    "02bc2bb333d86ebb01dcad6107d1c742c61a2523d6dcaf9e8f8833d5c1dc9e34",
+    "0ddfeb3d6ccc540dd758a4797d313b2da4931b7d1da3500fa6266112b6e45e87",
+    "20d7c3a436d5dcac0133f5b43030a7c7aae9b8c7dfa4520116d45c8d18723591",
+    "23c69684d1a1b5017b8006456577ac40e2274092952a3356516a3ec231ef4271",
+    "25b6b2d2e3bf16700f531320afd25d22b0288b13b2c944ba90c5248df0b921bb",
+    "2b9f040fe06db7931072d519712176f5ed7c17e280c1a555a899b58d2c485e1e",
+    "38f57ed10a2e68838234c0ce17493d908b1765071661c445b5e89ae63329c4cd",
+    "3c204e0387e0e006ae8e5691c171efc680ffcda7ed35d8eab970132f11c1d080",
+    "3d19bc2c8e620fab3c40ee535dc48bb4afc2ff7f439b462e27a04e962e8a52b8",
+    "48855fa7462bf2e3daf65eae4ee86f889e98fece87c20529075aaabd22275dcf",
+    "5ad6b360fdf5fe8fe2799e51eec702b51c5a8287a4a4a4b650912fbf8e591d57",
+    "6714c702d85684446019f50c91efbe18f07584bf822b3d74c0caaa9c1ef54d9d",
+    "681d6625abb6418af5b0d3f1b795e96a79cd8e6d3d1da0427c9343c07bbc0a11",
+    "70c4ba6d7bfa7b28c669528a31f81f615cdc524881fa1783f947470ce312f4a6",
+    "8b52657a4e4ada6d24c60108c125c3e6949a377ef528b4173ff2df7be146dc99",
+    "932eec8bcb6bc02f4f7a151782426cc6783da10c4845e7963f0936fe4d6f839c",
+    "b6865e82a503d55b820cec1edb382236000eec9d25098a619ba91419c0ac2b7c",
+    "e364eebc8e0443ef8eaf53af60895a4fadc69ec14032f5f833ec510107c34460",
+    "f7dd29a62b8df729a7fdb2fb1520407ea486d9059772211fc31ce72c1ffee1d7",
+    "fc1728476939aa7a0f75ca5717d5b181804910a1ae00cf1a9d1cb3ffdbd1f71f"
+  ],
+  "validation_episode_hashes": [
+    "3fb750548aea729a996f740fe83b85ca96f1e0da58a1475fd022fbcd7ffecba4",
+    "746b017abceb825b428793b2fece2900211edd96fdd79410d03882af79775828",
+    "87e844dfff1654e380e8e8a85b6df05561bc0766295f86e722d5fab6df74d8ca",
+    "941a90a5a5cd6ba93ae40f4aa288edbd58031f1b8826557aab3e19920f8091e5",
+    "9aad215bbaaca4c8d191eea05a33c282506bcb39112131eb38b9c1fc714b1fbe"
+  ],
+  "validation_before": {
+    "action_loss": 0.24867486506700515,
+    "action_second_difference": 0.00916612297296524,
+    "sampled_batches": 20,
+    "sampling_seed": 10042
+  },
+  "validation_after": {
+    "action_loss": 0.006083827465772629,
+    "action_second_difference": 0.029087788611650466,
+    "sampled_batches": 20,
+    "sampling_seed": 10042
+  },
+  "mean_training_loss": 0.011720147364151974,
+  "adaptation_seconds": 27.571407275041565,
+  "gradient_steps": 300,
+  "batch_size": 128,
+  "context_length": 30,
+  "trainable_params": 403420,
+  "frozen_params": 10467971,
+  "checkpoint_sha256": "d13f540d7650257adebbe55670334c7f0ba8de9229e473060631487bd16713f1",
+  "dataset_sha256": "348ba2bb5278a931f5facf267eb2c54db19e065527bc0df5ce65e9dcfe65210d"
+}

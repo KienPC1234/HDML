@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,19 +13,20 @@ import onnxruntime as ort
 import pytest
 
 
+# Deployment artifacts are not committed (they are large and reproducible from
+# a checkpoint). Set this variable in CI/release checks to turn "missing model"
+# skips into hard failures instead of silently passing the suite.
+REQUIRE_DEPLOYMENT_MODELS = os.environ.get("HDML_REQUIRE_DEPLOYMENT_MODELS") == "1"
+
+
 # (model_path, prop_dim, action_dim, context_length).
 # context_length MUST match the value used at export time: the sequence axis
 # is baked into the graph (only batch is dynamic), so feeding any other
 # length fails with an ORT Gather out-of-bounds error.
 DEPLOYMENT_MODELS: list[tuple[str, int, int, int]] = [
     ("deployment/unitree_a1_action_only.onnx", 35, 12, 20),
-    ("deployment/combat_npc_action_only.onnx", 34, 5, 20),
     ("deployment/unitree_a1_full.onnx", 35, 12, 20),
-    ("deployment/combat_npc_full.onnx", 34, 5, 20),
     ("deployment/hdml_halfcheetah.onnx", 17, 6, 20),
-    ("deployment/combat_npc_action_only.static-int8.onnx", 34, 5, 20),
-    ("deployment/combat_npc_action_only.int4.onnx", 34, 5, 20),
-    ("deployment/fps_arena_npc_action_only.onnx", 48, 7, 20),
 ]
 
 
@@ -35,7 +37,10 @@ DEPLOYMENT_MODELS: list[tuple[str, int, int, int]] = [
 def test_onnx_cpu_inference_parity(model_path: str, prop_dim: int, action_dim: int, context_length: int) -> None:
     path = Path(model_path)
     if not path.exists():
-        pytest.skip(f"Model {model_path} not found")
+        message = f"Model {model_path} not found"
+        if REQUIRE_DEPLOYMENT_MODELS:
+            pytest.fail(message + " (HDML_REQUIRE_DEPLOYMENT_MODELS=1)")
+        pytest.skip(message)
 
     session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
 
@@ -70,7 +75,10 @@ def test_csharp_onnx_runtime_parity(
 ) -> None:
     path = Path(model_path)
     if not path.exists():
-        pytest.skip(f"Model {model_path} not found")
+        message = f"Model {model_path} not found"
+        if REQUIRE_DEPLOYMENT_MODELS:
+            pytest.fail(message + " (HDML_REQUIRE_DEPLOYMENT_MODELS=1)")
+        pytest.skip(message)
 
     dotnet_bin = shutil.which("dotnet")
     if not dotnet_bin:

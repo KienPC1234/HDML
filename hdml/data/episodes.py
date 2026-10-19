@@ -84,7 +84,11 @@ def pack_episodes(episodes: list[dict[str, np.ndarray]], context_length: int,
     std = obs.std(axis=0) + 1e-6 if state_std is None else np.asarray(state_std)
     if mean.shape != obs.shape[1:] or std.shape != mean.shape or np.any(std <= 0):
         raise ValueError('Invalid state normalization statistics')
-    actions, previous, returns, times, starts = [], [], [], [], []
+    actions: list[np.ndarray] = []
+    previous: list[np.ndarray] = []
+    returns: list[np.ndarray] = []
+    times: list[np.ndarray] = []
+    starts: list[int] = []
     offset = 0
     for ep in episodes:
         acts, rews = ep['actions'], ep['rewards']

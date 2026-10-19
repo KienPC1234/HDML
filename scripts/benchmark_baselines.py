@@ -89,7 +89,6 @@ def evaluate_policy(
 
         current_rtg = target_return
         hx = None
-        current_subgoal = None
 
         for t in range(1000):
             raw_obs = np.asarray(obs, dtype=np.float32)
@@ -150,7 +149,7 @@ def evaluate_policy(
                 action = action_t[0, 0, :].cpu().numpy().astype(np.float32)
             else:  # (B, action_dim)
                 action = action_t[0, :].cpu().numpy().astype(np.float32)
-                
+
             action = np.clip(action, -1.0, 1.0)
             # Append the executed action; the input action at the final context
             # position is thus a_{t-1} (causal no-leakage convention).
@@ -192,7 +191,7 @@ def evaluate_policy(
         "returns_array": np.array(returns, dtype=np.float32),
         "norm_scores_array": norm_scores,
         "mean_length": float(np.mean(lengths)),
-        "episode_completion_rate": float(sum(l >= 1000 for l in lengths) / max(1, len(lengths)) * 100.0),
+        "episode_completion_rate": float(sum(length >= 1000 for length in lengths) / max(1, len(lengths)) * 100.0),
         "mean_smoothness_jerk": float(np.mean(smoothnesses)),
         "mean_latency_ms": mean_lat,
         "frequency_hz": freq_hz,
@@ -222,7 +221,7 @@ def load_baseline_checkpoint(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark HDML against trained baseline paradigms (fair comparison).")
     parser.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml", help="Path to config YAML")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/rebuild_long/halfcheetah_v5/best_model.pt", help="Path to trained HDML checkpoint")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/corrected")
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per evaluation")
@@ -359,7 +358,6 @@ def main() -> None:
     )
 
     std_scores_dict = {res["name"]: res["norm_scores_array"] for res in results_std}
-    rob_scores_dict = {res["name"]: res["norm_scores_array"] for res in results_rob}
 
     # Generate 3-panel publication figure
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -383,7 +381,7 @@ def main() -> None:
     print("-" * 125)
 
     print("\n" + "-" * 125)
-    print(f"PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)")
+    print("PERTURBATION ROBUSTNESS (Random Force Impulses & Continuous Sensor Noise)")
     print("-" * 125)
     print(
         f"{'Architecture / Paradigm':<44} | {'Raw Return':<20} | {'Perturbed IQM (95% CI)':<26} | {'Jerk (Smooth)':<14} | {'Complete %':<10}"

@@ -6,10 +6,11 @@ Applies professional scientific styling and natural Vietnamese academic tone.
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 
 def main() -> None:
-    repo_root = Path("/data/HDML_Model")
+    repo_root = Path(__file__).resolve().parents[1]
     assets_dir = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_assets"
     output_html = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt.html"
     output_b64_copy = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_khkt_base64.html"

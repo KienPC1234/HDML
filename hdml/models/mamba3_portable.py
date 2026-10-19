@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Portable (pure PyTorch) Mamba-3 SISO forward, for CPU inference and ONNX export.
 
 The native ``mamba_ssm.Mamba3`` layer runs a fused Triton/CUTE kernel that cannot
@@ -15,6 +13,8 @@ Shape contract:
     Input:  (Batch, Seq_Len, d_model)
     Output: (Batch, Seq_Len, d_model)
 """
+
+from __future__ import annotations
 
 import math
 

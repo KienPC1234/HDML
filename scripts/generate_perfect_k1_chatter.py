@@ -1,8 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Load raw measured rollout data (1000 steps, 20s, 50 Hz on Unitree A1)
-data = np.load('/data/HDML_Model/results/rebuild_unitree/waveform_rollout.arrays.npz')
+data = np.load(REPO_ROOT / 'results/rebuild_unitree/waveform_rollout.arrays.npz')
 hdml_act = data['hdml_act']
 dt_act = data['dt_act']
 
@@ -27,9 +30,9 @@ plt.rcParams['axes.edgecolor'] = '#cbd5e1'
 plt.rcParams['axes.linewidth'] = 1.3
 
 fig, (ax1, ax2) = plt.subplots(
-    2, 1, 
-    figsize=(11.0, 6.6), 
-    dpi=240, 
+    2, 1,
+    figsize=(11.0, 6.6),
+    dpi=240,
     gridspec_kw={'height_ratios': [1.25, 1.0], 'hspace': 0.45}
 )
 
@@ -96,7 +99,7 @@ ax2.set_xlim(0, 20)
 ax2.set_ylim(-0.5, 18.5)
 ax2.tick_params(colors='#334155', labelsize=10)
 
-out_path = '/data/HDML_Model/KH_thi_KHKT_TP_2026-2027/poster_assets/chart_torque_chatter_k1.png'
+out_path = REPO_ROOT / 'KH_thi_KHKT_TP_2026-2027/poster_assets/chart_torque_chatter_k1.png'
 fig.subplots_adjust(left=0.08, right=0.97, top=0.92, bottom=0.09, hspace=0.45)
 plt.savefig(out_path, dpi=240)
 print('Successfully saved high-res measured chatter chart to:', out_path)

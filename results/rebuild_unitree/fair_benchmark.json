@@ -1,0 +1,50 @@
+{
+  "HDML": {
+    "return_mean": 1495.2910121808454,
+    "return_std": 0.0,
+    "completion_pct": 100.0,
+    "jerk": 0.06277067214250565,
+    "latency_ms": 8.59762655349914,
+    "freq_hz": 116.31116957423686
+  },
+  "Decision Transformer": {
+    "return_mean": 1449.1200301246845,
+    "return_std": 0.0,
+    "completion_pct": 100.0,
+    "jerk": 0.07334629446268082,
+    "latency_ms": 2.4366608540760355,
+    "freq_hz": 410.3976958168817
+  },
+  "Decision RNN": {
+    "return_mean": 1454.0166390001323,
+    "return_std": 0.0,
+    "completion_pct": 100.0,
+    "jerk": 0.06401128321886063,
+    "latency_ms": 1.178885244234698,
+    "freq_hz": 848.2589844011275
+  },
+  "Diffusion Policy": {
+    "return_mean": 960.3157400116197,
+    "return_std": 6.6412128921600955,
+    "completion_pct": 100.0,
+    "jerk": 0.2118142619729042,
+    "latency_ms": 6.892191020568134,
+    "freq_hz": 145.0917418010809
+  },
+  "IQL": {
+    "return_mean": 1452.3167176528564,
+    "return_std": 0.0,
+    "completion_pct": 100.0,
+    "jerk": 0.06228800117969513,
+    "latency_ms": 0.2775286555173807,
+    "freq_hz": 3603.231522653967
+  },
+  "MLP-BC": {
+    "return_mean": 1343.9433750158205,
+    "return_std": 0.0,
+    "completion_pct": 100.0,
+    "jerk": 0.06626402586698532,
+    "latency_ms": 0.30647984296665526,
+    "freq_hz": 3262.8573230794796
+  }
+}

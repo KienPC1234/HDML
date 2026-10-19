@@ -122,6 +122,7 @@ class CrossModalFusion(nn.Module):
         self.timestep_embed = nn.Embedding(max_timesteps, d_model)
 
         # 5. Optional Visual Encoder
+        self.visual_encoder: VisualPatchEncoder | None
         if self.use_visual:
             self.visual_encoder = VisualPatchEncoder(
                 in_channels=visual_channels,
@@ -161,10 +162,13 @@ class CrossModalFusion(nn.Module):
         Returns:
             Fused sequence tensor U_t, shape (B, T, d_model).
         """
-        assert states.ndim == 3, f"Expected states (B, T, prop_dim), got {states.shape}"
-        assert states.shape[-1] == self.prop_dim, (
-            f"Expected state dim {self.prop_dim}, got {states.shape[-1]}"
-        )
+        # Shape assertions are skipped while tracing: torch.onnx turns shape
+        # comparisons into tensor ops, which only produce spurious TracerWarnings.
+        if not torch.onnx.is_in_onnx_export():
+            assert states.ndim == 3, f"Expected states (B, T, prop_dim), got {states.shape}"
+            assert states.shape[-1] == self.prop_dim, (
+                f"Expected state dim {self.prop_dim}, got {states.shape[-1]}"
+            )
 
         batch_size, seq_len, _ = states.shape
         device = states.device
@@ -172,23 +176,26 @@ class CrossModalFusion(nn.Module):
         # Reshape RTG if needed
         if rtgs.ndim == 2:
             rtgs = rtgs.unsqueeze(-1)
-        assert rtgs.shape == (batch_size, seq_len, 1), (
-            f"Expected rtgs shape {(batch_size, seq_len, 1)}, got {rtgs.shape}"
-        )
+        if not torch.onnx.is_in_onnx_export():
+            assert rtgs.shape == (batch_size, seq_len, 1), (
+                f"Expected rtgs shape {(batch_size, seq_len, 1)}, got {rtgs.shape}"
+            )
 
         # Handle actions
         if actions is None:
             actions = torch.zeros(batch_size, seq_len, self.action_dim, device=device, dtype=states.dtype)
-        assert actions.shape == (batch_size, seq_len, self.action_dim), (
-            f"Expected actions shape {(batch_size, seq_len, self.action_dim)}, got {actions.shape}"
-        )
+        if not torch.onnx.is_in_onnx_export():
+            assert actions.shape == (batch_size, seq_len, self.action_dim), (
+                f"Expected actions shape {(batch_size, seq_len, self.action_dim)}, got {actions.shape}"
+            )
 
         # Handle timesteps
         if timesteps is None:
             timesteps = torch.arange(seq_len, device=device).unsqueeze(0).expand(batch_size, seq_len)
-        assert timesteps.shape == (batch_size, seq_len), (
-            f"Expected timesteps shape {(batch_size, seq_len)}, got {timesteps.shape}"
-        )
+        if not torch.onnx.is_in_onnx_export():
+            assert timesteps.shape == (batch_size, seq_len), (
+                f"Expected timesteps shape {(batch_size, seq_len)}, got {timesteps.shape}"
+            )
 
         # Encode individual modalities
         z_prop = self.prop_encoder(states)                 # (B, T, d_model)
@@ -216,7 +223,8 @@ class CrossModalFusion(nn.Module):
         fused_raw = torch.cat(modalities, dim=-1)           # (B, T, fusion_in_dim)
         u_t = self.fusion_proj(fused_raw)                   # (B, T, d_model)
 
-        assert u_t.shape == (batch_size, seq_len, self.d_model), (
-            f"Expected fused output shape {(batch_size, seq_len, self.d_model)}, got {u_t.shape}"
-        )
+        if not torch.onnx.is_in_onnx_export():
+            assert u_t.shape == (batch_size, seq_len, self.d_model), (
+                f"Expected fused output shape {(batch_size, seq_len, self.d_model)}, got {u_t.shape}"
+            )
         return u_t

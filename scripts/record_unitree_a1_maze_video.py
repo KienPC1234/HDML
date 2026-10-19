@@ -241,7 +241,6 @@ def record_maze_navigation(
 
     current_rtg = 0.5
     goal_reached = False
-    hx = None
 
     logger.info(f"Recording closed-loop Unitree A1 navigation from {env.start_pos} to {env.goal_pos}...")
 

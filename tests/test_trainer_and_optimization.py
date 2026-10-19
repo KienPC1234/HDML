@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 import numpy as np
 import torch
-import pytest
 
 from hdml.data.dataset import FastTensorTrajectoryDataset
 from hdml.models.hdml_model import HDMLModel

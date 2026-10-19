@@ -103,10 +103,11 @@ class Mamba3NativeBlock(nn.Module):
         Returns:
             Tensor of shape (Batch, Seq_Len, d_model).
         """
-        assert x.ndim == 3, f"Expected (B, L, D), got {tuple(x.shape)}"
-        assert x.shape[-1] == self.d_model, (
-            f"Expected last dim {self.d_model}, got {x.shape[-1]}"
-        )
+        if not torch.onnx.is_in_onnx_export():
+            assert x.ndim == 3, f"Expected (B, L, D), got {tuple(x.shape)}"
+            assert x.shape[-1] == self.d_model, (
+                f"Expected last dim {self.d_model}, got {x.shape[-1]}"
+            )
         return x + self.mamba(self.norm(x))
 
 

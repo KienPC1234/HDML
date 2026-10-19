@@ -8,23 +8,11 @@ from pathlib import Path
 import numpy as np
 
 from hdml.data.collector import discount_cumsum
+from hdml.evaluation.rollout import leg_ik
 from hdml.evaluation.unitree_a1_maze_env import UnitreeA1MazeEnv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("CollectUnitreeA1Maze")
-
-
-def leg_ik(x: float, z: float, l1: float = 0.20, l2: float = 0.20) -> tuple[float, float]:
-    """Analytic 2-Link Inverse Kinematics for Unitree A1 thigh and calf."""
-    r2 = x**2 + z**2
-    r = math.sqrt(r2)
-    cos_q2 = max(-1.0, min(1.0, (r2 - l1**2 - l2**2) / (2 * l1 * l2)))
-    q2 = -math.acos(cos_q2)
-    beta = math.atan2(-x, -z)
-    cos_gamma = max(-1.0, min(1.0, r / (2 * l1)))
-    gamma = math.acos(cos_gamma)
-    q1 = beta + gamma
-    return q1, q2
 
 
 class TopologicalMazeRouter:

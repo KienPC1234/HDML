@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 import numpy as np
 
 from hdml.models.foundation import HDMLFoundationModel, UniversalEmbodimentAdapter
-from hdml.data.multi_embodiment_dataset import FastEmbodimentBuffer, FastMultiEmbodimentManager
+from hdml.data.multi_embodiment_dataset import FastMultiEmbodimentManager
 
 
 def test_universal_adapter_shapes_and_gradients() -> None:

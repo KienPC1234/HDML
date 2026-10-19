@@ -104,59 +104,26 @@ class HDMLEvaluator:
             if len(history_actions) == 0:
                 history_actions.append(np.zeros(act_dim, dtype=np.float32))
 
-            # Context window formulation (exact causal slice without artificial zero-padding)
-            ctx_len = min(len(history_states), self.context_length)
-            ctx_states = np.array(history_states[-ctx_len:], dtype=np.float32)
-            ctx_actions = np.array(history_actions[-ctx_len:], dtype=np.float32)
-            ctx_rtgs = np.array(history_rtgs[-ctx_len:], dtype=np.float32).reshape(-1, 1)
-            ctx_timesteps = np.array(history_timesteps[-ctx_len:], dtype=np.int64)
-
-            t_states = torch.from_numpy(ctx_states).unsqueeze(0).to(self.device)
-            t_actions = torch.from_numpy(ctx_actions).unsqueeze(0).to(self.device)
-            t_rtgs = torch.from_numpy(ctx_rtgs).unsqueeze(0).to(self.device)
-            t_timesteps = torch.from_numpy(ctx_timesteps).unsqueeze(0).to(self.device)
+            t_states, t_actions, t_rtgs, t_timesteps = self._context_tensors(
+                history_states, history_actions, history_rtgs, history_timesteps
+            )
             t_prop_current = torch.from_numpy(norm_obs).unsqueeze(0).to(self.device)
 
-            # Check if PACE triggers early macro replanning due to state deviation
-            needs_replanning = False
-            if pace_controller is not None and macro_interval > 1 and current_subgoal is not None:
-                _, needs_replanning = pace_controller.get_next_action(t_prop_current.squeeze(0))
-
-            if t % macro_interval == 0 or current_subgoal is None or needs_replanning:
-                with torch.inference_mode():
-                    action_tensor, cfc_hx, info = self.model.get_action(
-                        states=t_states,
-                        rtgs=t_rtgs,
-                        actions=t_actions,
-                        timesteps=t_timesteps,
-                        hx=None,
-                    )
-                    current_subgoal = info["subgoal"]
-                    current_latent = info.get("latent")
-                    if pace_controller is not None and macro_interval > 1:
-                        # Feed action / predicted states to PACE for chunk deviation tracking
-                        pace_controller.set_new_plan(
-                            action_chunk=action_tensor.squeeze(0).unsqueeze(0),
-                            predicted_states=None,
-                        )
-            else:
-                # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal and latent
-                t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
-                with torch.inference_mode():
-                    action_tensor, cfc_hx = self.model.act_from_subgoal(
-                        subgoal=current_subgoal,
-                        current_prop=t_prop_current,
-                        rtg=t_rtg_current,
-                        hx=None,
-                        latent=current_latent,
-                    )
-
-            if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
-                action = action_tensor[0, 0, :].cpu().numpy().astype(np.float32)
-            else:  # (B, action_dim) from get_action
-                action = action_tensor[0, :].cpu().numpy().astype(np.float32)
-                
-            action = np.clip(action, -1.0, 1.0)
+            action_tensor, cfc_hx, current_subgoal, current_latent = self._select_action(
+                t=t,
+                macro_interval=macro_interval,
+                t_states=t_states,
+                t_actions=t_actions,
+                t_rtgs=t_rtgs,
+                t_timesteps=t_timesteps,
+                t_prop_current=t_prop_current,
+                scaled_rtg=scaled_rtg,
+                cfc_hx=cfc_hx,
+                current_subgoal=current_subgoal,
+                current_latent=current_latent,
+                pace_controller=pace_controller,
+            )
+            action = self._tensor_to_action(action_tensor)
 
             # Apply force perturbation if active
             exec_action = action
@@ -190,6 +157,88 @@ class HDMLEvaluator:
             "action_smoothness": smoothness,
             "action_rate_of_change": rate_of_change,
         }
+
+    def _context_tensors(
+        self,
+        history_states: list[np.ndarray],
+        history_actions: list[np.ndarray],
+        history_rtgs: list[float],
+        history_timesteps: list[int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build the causal context window tensors (no artificial zero-padding)."""
+        ctx_len = min(len(history_states), self.context_length)
+        ctx_states = np.array(history_states[-ctx_len:], dtype=np.float32)
+        ctx_actions = np.array(history_actions[-ctx_len:], dtype=np.float32)
+        ctx_rtgs = np.array(history_rtgs[-ctx_len:], dtype=np.float32).reshape(-1, 1)
+        ctx_timesteps = np.array(history_timesteps[-ctx_len:], dtype=np.int64)
+        return (
+            torch.from_numpy(ctx_states).unsqueeze(0).to(self.device),
+            torch.from_numpy(ctx_actions).unsqueeze(0).to(self.device),
+            torch.from_numpy(ctx_rtgs).unsqueeze(0).to(self.device),
+            torch.from_numpy(ctx_timesteps).unsqueeze(0).to(self.device),
+        )
+
+    def _select_action(
+        self,
+        *,
+        t: int,
+        macro_interval: int,
+        t_states: torch.Tensor,
+        t_actions: torch.Tensor,
+        t_rtgs: torch.Tensor,
+        t_timesteps: torch.Tensor,
+        t_prop_current: torch.Tensor,
+        scaled_rtg: float,
+        cfc_hx: torch.Tensor | None,
+        current_subgoal: torch.Tensor | None,
+        current_latent: torch.Tensor | None,
+        pace_controller: PACEController | None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """Run a macro replan or fast micro- actuation and return the action tensor."""
+        needs_replanning = False
+        if pace_controller is not None and macro_interval > 1 and current_subgoal is not None:
+            _, needs_replanning = pace_controller.get_next_action(t_prop_current.squeeze(0))
+
+        if t % macro_interval == 0 or current_subgoal is None or needs_replanning:
+            with torch.inference_mode():
+                action_tensor, cfc_hx, info = self.model.get_action(
+                    states=t_states,
+                    rtgs=t_rtgs,
+                    actions=t_actions,
+                    timesteps=t_timesteps,
+                    hx=None,
+                )
+                current_subgoal = info["subgoal"]
+                current_latent = info.get("latent")
+                if pace_controller is not None and macro_interval > 1:
+                    # Feed action / predicted states to PACE for chunk deviation tracking
+                    pace_controller.set_new_plan(
+                        action_chunk=action_tensor.squeeze(0).unsqueeze(0),
+                        predicted_states=None,
+                    )
+            return action_tensor, cfc_hx, current_subgoal, current_latent
+
+        # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal and latent.
+        assert current_subgoal is not None
+        t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
+        with torch.inference_mode():
+            action_tensor, cfc_hx = self.model.act_from_subgoal(
+                subgoal=current_subgoal,
+                current_prop=t_prop_current,
+                rtg=t_rtg_current,
+                hx=None,
+                latent=current_latent,
+            )
+        return action_tensor, cfc_hx, current_subgoal, current_latent
+
+    @staticmethod
+    def _tensor_to_action(action_tensor: torch.Tensor) -> np.ndarray:
+        """Convert (B, chunk, dim) or (B, dim) policy output to a clipped action vector."""
+        if action_tensor.ndim == 3:  # (B, chunk_size, action_dim)
+            action = action_tensor[0, 0, :].cpu().numpy().astype(np.float32)
+        else:  # (B, action_dim) from get_action
+            action = action_tensor[0, :].cpu().numpy().astype(np.float32)
+        return np.clip(action, -1.0, 1.0)
 
     def evaluate_benchmark(
         self,

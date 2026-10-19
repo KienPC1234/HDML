@@ -1,0 +1,83 @@
+HDML RLIABLE BENCHMARK RESULTS - HalfCheetah-v5
+====================================================================================================
+
+STANDARD BENCHMARK:
+- HDML (Decision Mamba + Liquid CfC - Ours):
+    IQM (95% CI): 55.22 [16.67, 85.71]
+    D4RL Mean Score: 54.09
+    Raw Return: 6435.03 +/- 3770.38
+    Smoothness (Jerk): 0.6083
+    Inference Latency: 13.83 ms (72.3 Hz)
+    Parameters: 1,441,713
+
+- Diffusion Policy (DDPM 10-step Denoising):
+    IQM (95% CI): -0.06 [-0.73, 0.43]
+    D4RL Mean Score: -0.15
+    Raw Return: -298.66 +/- 67.53
+    Smoothness (Jerk): 1.2580
+    Inference Latency: 6.76 ms (148.0 Hz)
+    Parameters: 153,606
+
+- Decision Transformer (Causal Attention DT):
+    IQM (95% CI): 95.60 [25.36, 107.79]
+    D4RL Mean Score: 79.10
+    Raw Return: 9540.62 +/- 5127.89
+    Smoothness (Jerk): 0.8109
+    Inference Latency: 2.40 ms (417.2 Hz)
+    Parameters: 1,206,918
+
+- Implicit Q-Learning (IQL / Value-Advantage):
+    IQM (95% CI): 1.84 [1.79, 2.26]
+    D4RL Mean Score: 1.95
+    Raw Return: -38.30 +/- 31.20
+    Smoothness (Jerk): 0.0080
+    Inference Latency: 0.29 ms (3396.7 Hz)
+    Parameters: 286,985
+
+- Decision RNN (LSTM Recurrent Policy):
+    IQM (95% CI): 45.27 [0.87, 112.50]
+    D4RL Mean Score: 50.10
+    Raw Return: 5940.25 +/- 6347.65
+    Smoothness (Jerk): 0.4802
+    Inference Latency: 1.18 ms (847.7 Hz)
+    Parameters: 1,008,390
+
+- MLP-BC (Standard Feedforward Reactive):
+    IQM (95% CI): -0.26 [-0.26, -0.24]
+    D4RL Mean Score: -0.26
+    Raw Return: -311.94 +/- 1.36
+    Smoothness (Jerk): 0.0028
+    Inference Latency: 0.36 ms (2811.7 Hz)
+    Parameters: 72,198
+
+PERTURBATION ROBUSTNESS BENCHMARK:
+- HDML (Decision Mamba + Liquid CfC - Ours):
+    Perturbed IQM (95% CI): 9.82 [5.31, 24.74]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 0.5123
+
+- Diffusion Policy (DDPM 10-step Denoising):
+    Perturbed IQM (95% CI): -0.28 [-0.50, 0.32]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 1.2649
+
+- Decision Transformer (Causal Attention DT):
+    Perturbed IQM (95% CI): 1.17 [0.32, 4.19]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 0.3118
+
+- Implicit Q-Learning (IQL / Value-Advantage):
+    Perturbed IQM (95% CI): 2.11 [2.03, 2.32]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 0.1174
+
+- Decision RNN (LSTM Recurrent Policy):
+    Perturbed IQM (95% CI): 7.91 [2.51, 12.41]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 0.3920
+
+- MLP-BC (Standard Feedforward Reactive):
+    Perturbed IQM (95% CI): -0.34 [-0.40, -0.30]
+    Episode Completion Rate (not a safety metric): 100.0%
+    Smoothness (Jerk): 0.3385
+

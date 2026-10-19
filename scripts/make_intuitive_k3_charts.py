@@ -5,7 +5,6 @@ Directly maps to the 4 key metrics: Return, Smoothness, Robustness, Real-time La
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import matplotlib
@@ -18,7 +17,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 
 def main() -> None:
-    repo_root = Path("/data/HDML_Model")
+    repo_root = Path(__file__).resolve().parents[1]
     out_dir = repo_root / "KH_thi_KHKT_TP_2026-2027" / "poster_assets"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -32,7 +31,7 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=(5.6, 4.4), dpi=250)
     x = np.arange(len(models))
-    bars = ax.bar(x, means, color=colors, edgecolor="#0f172a", linewidth=1.5, width=0.72)
+    ax.bar(x, means, color=colors, edgecolor="#0f172a", linewidth=1.5, width=0.72)
     ax.errorbar(x, means, yerr=stds, fmt="none", ecolor="#0f172a", capsize=5, lw=2.0)
 
     for xi, v in zip(x, means):
@@ -65,8 +64,8 @@ def main() -> None:
     x = np.arange(len(categories))
     w = 0.34
 
-    bars_hdml = ax.bar(x - w / 2, hdml_vals, width=w, color="#059669", edgecolor="#0f172a", linewidth=1.5, label="HDML (Đề xuất)")
-    bars_dt = ax.bar(x + w / 2, dt_vals, width=w, color="#dc2626", edgecolor="#0f172a", linewidth=1.5, label="Transformer (DT)")
+    ax.bar(x - w / 2, hdml_vals, width=w, color="#059669", edgecolor="#0f172a", linewidth=1.5, label="HDML (Đề xuất)")
+    ax.bar(x + w / 2, dt_vals, width=w, color="#dc2626", edgecolor="#0f172a", linewidth=1.5, label="Transformer (DT)")
 
     # Values on bars
     ax.text(x[0] - w / 2, 6.28 + 0.35, "0,063", ha="center", fontsize=13.5, fontweight="bold", color="#059669")
@@ -145,7 +144,7 @@ def main() -> None:
     mcolors = ["#059669", "#0284c7", "#475569", "#94a3b8"]
 
     x = np.arange(len(modes))
-    bars = ax.bar(x, lats, color=mcolors, edgecolor="#0f172a", linewidth=1.5, width=0.68)
+    ax.bar(x, lats, color=mcolors, edgecolor="#0f172a", linewidth=1.5, width=0.68)
 
     for xi, v in zip(x, lats):
         ax.text(xi, v + 0.45, f"{v:.2f}".replace(".", ",") + " ms", ha="center", fontsize=13.5, fontweight="bold", color="#0f172a")

@@ -35,26 +35,12 @@ import numpy as np
 import torch
 
 from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
-from hdml.models import DecisionTransformerBaseline, HDMLModel
+from hdml.evaluation.rollout import UnitreeRolloutContext, load_hdml_checkpoint, to_action, torso_roll
+from hdml.models import DecisionTransformerBaseline
 from hdml.utils.config import HDMLConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("KickReal")
-
-
-def torso_roll(obs: np.ndarray) -> float:
-    w, x, y, z = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
-    return float(np.degrees(np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))))
-
-
-def load_hdml(path: str, cfg: HDMLConfig, device: torch.device) -> tuple[HDMLModel, np.ndarray, np.ndarray]:
-    ck = torch.load(path, map_location=device, weights_only=False)
-    model = HDMLModel.from_config(cfg.model).to(device)
-    model.load_state_dict(ck["model_state_dict"])
-    model.eval()
-    model.deterministic = True
-    model.num_flow_steps = 4
-    return model, np.asarray(ck["state_mean"], np.float32), np.asarray(ck["state_std"], np.float32)
 
 
 def load_dt(path: str, cfg: HDMLConfig, device: torch.device) -> tuple[DecisionTransformerBaseline, np.ndarray, np.ndarray]:
@@ -69,12 +55,6 @@ def load_dt(path: str, cfg: HDMLConfig, device: torch.device) -> tuple[DecisionT
     return model, np.asarray(ck["state_mean"], np.float32), np.asarray(ck["state_std"], np.float32)
 
 
-def _to_action(out) -> np.ndarray:
-    a = out[0] if isinstance(out, tuple) else out
-    a = a[0, 0, :] if a.ndim == 3 else a[0, :]
-    return np.clip(a.detach().cpu().numpy().astype(np.float32), -1.0, 1.0)
-
-
 def run_episode(
     model, mtype: str, cfg: HDMLConfig, device: torch.device,
     sm: np.ndarray, ss: np.ndarray, force: float, kick_step: int, seed: int,
@@ -82,43 +62,27 @@ def run_episode(
 ) -> dict:
     env = QuadrupedDogEnv(max_episode_steps=max_steps, render_mode="rgb_array" if capture_steps else None)
     obs, _ = env.reset(seed=seed)
-    ctx = cfg.training.context_length
-    adim = cfg.model.action_dim
-    hs: list[np.ndarray] = []
-    ha: list[np.ndarray] = []
-    hr: list[float] = []
-    ht: list[int] = []
+    context = UnitreeRolloutContext(cfg, sm, ss, device)
     ep_r: list[float] = []
     rolls: list[float] = []
-    acts: list[list[float]] = []
     frames: dict[int, np.ndarray] = {}
-    rtg = float(cfg.env.target_return)
     peak = 0.0
     recovered_at = None
     alive = 0
     for t in range(max_steps):
-        n = (np.asarray(obs, np.float32) - sm) / ss
-        hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-        if not ha:
-            ha.append(np.zeros(adim, np.float32))
-        cl = min(len(hs), ctx)
-        ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-        ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-        tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-        tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
+        ts, ta, tr, tt = context.update(obs, t)
         with torch.inference_mode():
             if mtype == "hdml":
                 out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
             else:
                 out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
-        a = _to_action(out)
+        a = to_action(out)
         if kick_step <= t < kick_step + 3:
             env.apply_kick((0.0, float(force), 0.0))
         obs, r, term, trunc, _ = env.step(a)
-        ha.append(a)
-        acts.append([round(float(v), 4) for v in a])
+        context.record_action(a)
         ep_r.append(float(r))
-        rtg -= float(r)
+        context.consume_reward(float(r))
         roll = abs(torso_roll(obs))
         rolls.append(round(roll, 2))
         peak = max(peak, roll)
@@ -143,6 +107,7 @@ def run_episode(
     if device.type == "cuda":
         torch.cuda.empty_cache()
     survived = bool(alive >= max_steps - 1)
+    acts = [[round(float(v), 4) for v in action] for action in context.actions]
     return {
         "force": float(force), "seed": int(seed), "steps": alive + 1,
         "peak_roll_deg": round(peak, 1),
@@ -176,7 +141,7 @@ def main() -> None:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     logger.info("device=%s", device)
 
-    hdml, hsm, hss = load_hdml(args.hdml_checkpoint, cfg, device)
+    hdml, hsm, hss = load_hdml_checkpoint(args.hdml_checkpoint, cfg, device)
     dt, dsm, dss = load_dt(args.dt_checkpoint, cfg, device)
 
     max_steps = int(cfg.env.max_episode_steps)

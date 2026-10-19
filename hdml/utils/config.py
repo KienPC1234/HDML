@@ -27,7 +27,7 @@ class ModelConfig:
     visual_image_size: int = 64
     dropout: float = 0.1
     action_policy: str = "gaussian"  # "gaussian" (BC regressor) or "flow" (flow matching)
-    use_native_mamba3: bool = True  # use native mamba_ssm Mamba3 (else legacy Mamba-1+RoPE)
+    use_native_mamba3: bool = True  # use native mamba_ssm Mamba3 (else Mamba-1 + input-RoPE fallback)
     mamba3_headdim: int = 64
     mamba3_ngroups: int = 1
     mamba3_rope_fraction: float = 0.5
@@ -35,7 +35,6 @@ class ModelConfig:
     mamba3_chunk: int = 64
     use_cfc: bool = True  # enable CfC liquid action filter (can disable for low-overhead game/NPC)
     use_critic: bool = True  # enable HiQC critic (disable if doing pure behavior cloning / imitation)
-    chunk_size: int = 4  # action chunk horizon
     num_flow_steps: int = 4  # Euler integration steps for flow matching
     device: str = "cuda"
 

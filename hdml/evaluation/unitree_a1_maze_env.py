@@ -67,6 +67,8 @@ class TopologicalMazeRouter:
 
 
 class UnitreeA1MazeEnv(gym.Env):
+    waypoints: list[tuple[float, float]]
+    wp_idx: int
     """12-DOF Unitree A1 Quadruped Labyrinth Navigation Environment.
 
     Strict Sensory Constraint:
@@ -282,8 +284,6 @@ class UnitreeA1MazeEnv(gym.Env):
         w, x_q, y_q, z_q = float(self.data.qpos[3]), float(self.data.qpos[4]), float(self.data.qpos[5]), float(self.data.qpos[6])
         yaw = float(math.atan2(2 * (w * z_q + x_q * y_q), 1 - 2 * (y_q * y_q + z_q * z_q)))
         lidar = self._compute_raycast_lidar(float(self.data.qpos[0]), float(self.data.qpos[1]), yaw, num_rays=16, max_range=4.0)
-        left_dist = float(np.min(lidar[11:14]))
-        right_dist = float(np.min(lidar[2:5]))
         front_dist = float(np.min(lidar[7:10]))
 
         shield_steer = 0.0

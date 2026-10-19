@@ -6,10 +6,10 @@ Liquid Neural Networks (CfC ODE) for multi-robot pre-training and fast adaptatio
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import cast
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
 from hdml.models.mamba3_native import Mamba3NativeBackbone
@@ -200,7 +200,7 @@ class HDMLFoundationModel(nn.Module):
         """Retrieves registered embodiment adapter."""
         if name not in self.adapters:
             raise KeyError(f"Embodiment '{name}' not registered in Foundation Model. Available: {list(self.adapters.keys())}")
-        return self.adapters[name]
+        return cast(UniversalEmbodimentAdapter, self.adapters[name])
 
     def forward(
         self,

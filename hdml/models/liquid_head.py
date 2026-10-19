@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from ncps.torch import CfC
+from typing import cast
 
 
 
@@ -26,10 +27,10 @@ class CfCActionFilter(nn.Module):
         self.chunk_size = chunk_size
         self.state_dim = state_dim
         self.residual = residual
-        
+
         # We process the flattened action chunk + state
         self.input_dim = (action_dim * chunk_size) + state_dim
-        
+
         self.cfc = CfC(
             input_size=self.input_dim,
             units=units,
@@ -40,7 +41,7 @@ class CfCActionFilter(nn.Module):
             backbone_layers=backbone_layers,
             mode="default",
         )
-        
+
         self.out_proj = nn.Sequential(
             nn.Linear(units, units),
             nn.SiLU(),
@@ -48,12 +49,13 @@ class CfCActionFilter(nn.Module):
             nn.Tanh()
         )
         # Initialize final projection with small weights so initial filtering is near-identity
-        nn.init.uniform_(self.out_proj[2].weight, -1e-3, 1e-3)
-        nn.init.zeros_(self.out_proj[2].bias)
-        
+        final_layer = cast(nn.Linear, self.out_proj[2])
+        nn.init.uniform_(final_layer.weight, -1e-3, 1e-3)
+        nn.init.zeros_(final_layer.bias)
+
     def forward(
-        self, 
-        actions: torch.Tensor, 
+        self,
+        actions: torch.Tensor,
         state_repr: torch.Tensor,
         hx: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -93,13 +95,13 @@ class CfCActionFilter(nn.Module):
         if flat_actions.is_floating_point() and s_repr.is_floating_point() and flat_actions.dtype != s_repr.dtype:
             s_repr = s_repr.to(dtype=flat_actions.dtype)
         cfc_input = torch.cat([flat_actions, s_repr], dim=-1)
-        if cfc_input.shape[-1] != self.input_dim:
+        if not torch.onnx.is_in_onnx_export() and cfc_input.shape[-1] != self.input_dim:
             raise ValueError(f"CfC input dimension {cfc_input.shape[-1]} != {self.input_dim}")
         cfc_out, next_hx = self.cfc(cfc_input, hx)
         filtered = self.out_proj(cfc_out)
-        
+
         filtered = filtered.view(orig_shape)
         filtered_action = actions + self.residual * filtered
-            
+
         return filtered_action, next_hx
 

@@ -1,0 +1,7 @@
+[flake8]
+max-line-length = 120
+select = E4,E7,E9,F
+extend-ignore = E402,E701,E702,E731
+exclude = .venv,build,dist,.git,__pycache__,hdml.egg-info
+per-file-ignores =
+    __init__.py:F401

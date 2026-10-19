@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
-import torch.nn as nn
 
 from hdml.models.baselines import (
     DecisionTransformerBaseline,

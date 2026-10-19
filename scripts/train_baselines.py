@@ -9,7 +9,7 @@ import torch
 
 from hdml.utils.config import HDMLConfig
 from hdml.data.collector import TrajectoryCollector
-from hdml.data.dataset import FastTensorTrajectoryDataset, TrajectoryDataset
+from hdml.data.dataset import FastTensorTrajectoryDataset
 from hdml.models import (
     DecisionTransformerBaseline,
     DecisionRNNBaseline,

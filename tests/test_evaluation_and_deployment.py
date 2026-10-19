@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 import numpy as np
 import torch
-import torch.nn as nn
 
 from hdml.evaluation.pace_controller import PACEController
+from hdml.utils.metrics import get_d4rl_normalized_score
 from hdml.utils.rliable_metrics import compute_iqm, stratified_bootstrap_ci, compute_probability_of_improvement
-from hdml.deployment.onnx_exporter import export_hdml_to_onnx
+from hdml.deployment.onnx_exporter import export_hdml_to_onnx, infer_native_mamba3
 
 
 def test_pace_controller() -> None:
@@ -85,4 +85,20 @@ def test_onnx_export_action_only_and_without_cfc(tmp_path) -> None:
     assert onnx_file.exists()
     assert res["action_only"] is True
     assert res["max_numerical_diff"] < 1e-3
+
+
+def test_d4rl_normalization_matches_env_family_token() -> None:
+    assert get_d4rl_normalized_score("Ant-v4", 0.0) != 0.0
+    # "antmaze" must not inherit Ant's reference bounds.
+    assert get_d4rl_normalized_score("antmaze-medium-v2", 0.0) == 0.0
+    assert get_d4rl_normalized_score("HalfCheetah-v5", 0.0) != 0.0
+
+
+def test_infer_native_mamba3_from_state_dict() -> None:
+    native = {"mamba_backbone.layers.0.mamba.B_norm.weight": torch.zeros(1)}
+    legacy = {"mamba_backbone.layers.0.mamba.x_proj.weight": torch.zeros(1)}
+    other = {"fusion.prop_encoder.0.weight": torch.zeros(1)}
+    assert infer_native_mamba3(native) is True
+    assert infer_native_mamba3(legacy) is False
+    assert infer_native_mamba3(other) is None
 

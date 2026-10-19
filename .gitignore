@@ -224,26 +224,18 @@ __marimo__/
 *.npz
 *.onnx
 *.onnx.data
+/deployment/
 checkpoints/*
 !checkpoints/.gitkeep
 !data/.gitkeep
 
-# FPS-Arena experiment, game engine & artifacts
-botgame-fpsarea/
-hdml_player_extension/
-checkpoints/fps_arena*/
-configs/fps_arena*
-docs/fps_arena*
-scripts/*fps*
-scripts/rollout_pool.js
-scripts/tournament_score.js
-data/fps_arena_*.json
-data/*_norm.json
-
 # Runtime logs
 logs/
 *.log
-results
+
+# Experiment artifacts: small JSON/TXT summaries are tracked as evidence;
+# bulky plots, arrays and checkpoints are not (see .gitattributes for LFS).
+/results/**/*.png
 
 # LaTeX build artifacts
 *.aux

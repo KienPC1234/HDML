@@ -4,6 +4,7 @@ import logging
 import math
 import time
 from pathlib import Path
+from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -66,7 +67,7 @@ class BaselineTrainer:
         self.model_type = model_type
         self.config = config if config is not None else TrainingConfig()
         self.device = torch.device(device)
-        self.model = model.to(self.device)
+        self.model: Any = model.to(self.device)
 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -87,7 +88,7 @@ class BaselineTrainer:
         if self.val_dataset is not None:
             is_fast_val = hasattr(self.val_dataset, "states")
             val_workers = 0 if is_fast_val else (self.config.num_workers if use_cuda else 0)
-            self.val_loader = DataLoader(
+            self.val_loader: DataLoader[dict[str, torch.Tensor]] | None = DataLoader(
                 self.val_dataset,
                 batch_size=self.config.batch_size,
                 shuffle=False,

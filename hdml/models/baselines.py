@@ -4,12 +4,13 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import cast
 from hdml.models.fusion import CrossModalFusion
 
 
 class DecisionTransformerBaseline(nn.Module):
     """Decision Transformer (DT) Baseline.
-    
+
     Standard causal multi-head self-attention sequence model for offline RL.
     Quadratic time and memory complexity O(N^2).
     """
@@ -82,7 +83,7 @@ class DecisionTransformerBaseline(nn.Module):
 
 class DecisionRNNBaseline(nn.Module):
     """Decision RNN / LSTM Baseline.
-    
+
     Recurrent sequence model with constant step memory but no continuous ODE adaptation.
     """
 
@@ -146,7 +147,7 @@ class DecisionRNNBaseline(nn.Module):
 
 class DiffusionPolicyBaseline(nn.Module):
     """Diffusion Policy (DDPM Continuous Control Baseline).
-    
+
     Generative action model using iterative score-based / DDPM denoising diffusion.
     High expressivity for multi-modal trajectories, but computationally slow (K >= 10 steps).
     """
@@ -192,9 +193,9 @@ class DiffusionPolicyBaseline(nn.Module):
     def _timestep_embedding(self, timesteps: torch.Tensor, dim: int) -> torch.Tensor:
         """Sinusoidal diffusion timestep embedding."""
         half_dim = dim // 2
-        emb = math.log(10000) / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim, device=timesteps.device, dtype=torch.float32) * -emb)
-        emb = timesteps.float().unsqueeze(-1) * emb.unsqueeze(0)
+        log_scale = math.log(10000) / (half_dim - 1)
+        freqs = torch.exp(torch.arange(half_dim, device=timesteps.device, dtype=torch.float32) * -log_scale)
+        emb = timesteps.float().unsqueeze(-1) * freqs.unsqueeze(0)
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
         if dim % 2 == 1:
             emb = F.pad(emb, (0, 1))
@@ -253,13 +254,16 @@ class DiffusionPolicyBaseline(nn.Module):
         act_k = torch.randn((batch_size, self.action_dim), device=dev)
 
         # Iterative denoising loop (K steps)
+        alphas = cast(torch.Tensor, self.alphas)
+        alphas_cumprod_all = cast(torch.Tensor, self.alphas_cumprod)
+        betas = cast(torch.Tensor, self.betas)
         for k in reversed(range(self.denoising_steps)):
             k_tensor = torch.full((batch_size,), k, device=dev, dtype=torch.long)
             eps_pred = self.forward(act_k, k_tensor, cur_state, cur_rtg)
 
-            alpha = self.alphas[k]
-            alpha_cumprod = self.alphas_cumprod[k]
-            beta = self.betas[k]
+            alpha = alphas[k]
+            alpha_cumprod = alphas_cumprod_all[k]
+            beta = betas[k]
 
             # DDPM mean update
             act_k = (1.0 / torch.sqrt(alpha)) * (
@@ -275,7 +279,7 @@ class DiffusionPolicyBaseline(nn.Module):
 
 class IQLBaseline(nn.Module):
     """Implicit Q-Learning (IQL / Pure Offline Q-Learning Baseline).
-    
+
     Fast feedforward policy using expectile value regression without OOD query.
     Fast execution (> 100 Hz), but myopic 1-step Bellman updates without macro sequence context.
     """
@@ -347,7 +351,7 @@ class IQLBaseline(nn.Module):
 
 class MLPBCBaseline(nn.Module):
     """Standard Reactive MLP Behavior Cloning Baseline.
-    
+
     Markovian feed-forward network without sequence context or continuous dynamics.
     """
 

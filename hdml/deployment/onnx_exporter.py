@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,31 +19,35 @@ class PurePyTorchMamba(nn.Module):
 
     def __init__(self, mamba_module: nn.Module) -> None:
         super().__init__()
-        self.d_model = mamba_module.d_model
-        self.d_state = mamba_module.d_state
-        self.d_conv = mamba_module.d_conv
-        self.expand = mamba_module.expand
-        self.d_inner = mamba_module.d_inner
-        self.dt_rank = mamba_module.dt_rank
+        m = cast(Any, mamba_module)
+        self.d_model = m.d_model
+        self.d_state = m.d_state
+        self.d_conv = m.d_conv
+        self.expand = m.expand
+        self.d_inner = m.d_inner
+        self.dt_rank = m.dt_rank
 
-        self.in_proj = copy.deepcopy(mamba_module.in_proj).to("cpu")
+        self.in_proj = copy.deepcopy(m.in_proj).to("cpu")
         self.conv1d = nn.Conv1d(
             in_channels=self.d_inner,
             out_channels=self.d_inner,
-            bias=mamba_module.conv1d.bias is not None,
+            bias=m.conv1d.bias is not None,
             kernel_size=self.d_conv,
             groups=self.d_inner,
             padding=self.d_conv - 1,
         ).to("cpu")
-        self.conv1d.weight.data.copy_(mamba_module.conv1d.weight.data.to("cpu"))
-        if mamba_module.conv1d.bias is not None:
-            self.conv1d.bias.data.copy_(mamba_module.conv1d.bias.data.to("cpu"))
+        self.conv1d.weight.data.copy_(m.conv1d.weight.data.to("cpu"))
+        src_bias = m.conv1d.bias
+        if src_bias is not None:
+            dst_bias = self.conv1d.bias
+            assert dst_bias is not None
+            dst_bias.data.copy_(src_bias.data.to("cpu"))
 
-        self.x_proj = copy.deepcopy(mamba_module.x_proj).to("cpu")
-        self.dt_proj = copy.deepcopy(mamba_module.dt_proj).to("cpu")
-        self.out_proj = copy.deepcopy(mamba_module.out_proj).to("cpu")
-        self.A_log = nn.Parameter(mamba_module.A_log.data.clone().to("cpu"))
-        self.D = nn.Parameter(mamba_module.D.data.clone().to("cpu"))
+        self.x_proj = copy.deepcopy(m.x_proj).to("cpu")
+        self.dt_proj = copy.deepcopy(m.dt_proj).to("cpu")
+        self.out_proj = copy.deepcopy(m.out_proj).to("cpu")
+        self.A_log = nn.Parameter(m.A_log.data.clone().to("cpu"))
+        self.D = nn.Parameter(m.D.data.clone().to("cpu"))
 
     def forward(self, u: torch.Tensor) -> torch.Tensor:
         batch, seqlen, _ = u.shape
@@ -111,16 +115,17 @@ class HDMLDeploymentWrapper(nn.Module):
             self.normalizes_inputs = False
         # Clone model to CPU
         self.model = copy.deepcopy(model).to("cpu").eval()
+        model_any = cast(Any, self.model)
         # Deterministic flow solve for tracing/parity.
-        if hasattr(self.model, "deterministic"):
-            self.model.deterministic = True
+        if hasattr(model_any, "deterministic"):
+            model_any.deterministic = True
 
         # Replace the SSM kernels with pure-PyTorch portable versions so the graph
         # is traceable by torch.onnx and runnable on CPU.
-        if hasattr(self.model, "mamba_backbone"):
+        if hasattr(model_any, "mamba_backbone"):
             from hdml.models.mamba3_native import Mamba3NativeBlock
             from hdml.models.mamba3_portable import PortableMamba3
-            for block in self.model.mamba_backbone.layers:
+            for block in model_any.mamba_backbone.layers:
                 if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
                     if not isinstance(block.mamba, PurePyTorchMamba):
                         block.mamba = PurePyTorchMamba(block.mamba)
@@ -165,8 +170,11 @@ class HDMLDeploymentWrapper(nn.Module):
                 next_state: (Batch, Prop_Dim)
         """
         if self.normalizes_inputs:
-            states = (states - self.state_mean) / self.state_std
-        subgoals, latent, values, next_states, _, executed, _ = self.model.encode(
+            state_mean = cast(torch.Tensor, self.state_mean)
+            state_std = cast(torch.Tensor, self.state_std)
+            states = (states - state_mean) / state_std
+        model_any = cast(Any, self.model)
+        subgoals, latent, values, next_states, _, executed, _ = model_any.encode(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             action_last_only=True,
         )
@@ -178,6 +186,24 @@ class HDMLDeploymentWrapper(nn.Module):
         curr_subgoal = subgoals[:, -1, :]
         curr_next_state = next_states[:, -1, :]
         return curr_action, curr_subgoal, curr_next_state
+
+
+def infer_native_mamba3(state_dict: dict[str, torch.Tensor]) -> bool | None:
+    """Infer the backbone variant from checkpoint parameter names.
+
+    Native ``mamba_ssm.Mamba3`` blocks expose ``B_norm``/``C_norm``/``dt_bias``
+    and ``B_bias``/``C_bias``; the legacy Mamba-1 + RoPE wrapper exposes
+    ``x_proj``/``conv1d``/``dt_proj`` instead. Returns ``None`` when the
+    checkpoint has neither (e.g. a non-HDML state dict).
+    """
+    keys = [k for k in state_dict if "mamba_backbone.layers." in k]
+    if not keys:
+        return None
+    is_native = any(k.endswith(".mamba.B_norm.weight") or k.endswith(".mamba.dt_bias") for k in keys)
+    is_legacy = any(k.endswith(".mamba.x_proj.weight") for k in keys)
+    if is_native == is_legacy:
+        return None
+    return is_native
 
 
 def export_hdml_to_onnx(
