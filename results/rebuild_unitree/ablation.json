@@ -1,0 +1,30 @@
+{
+  "episodes": 10,
+  "note": "Inference-time component ablation on Unitree A1; w/o-CfC and w/o-Flow are structural edits of the trained HDML model; Mamba+MLP and Transformer+CfC are separately-trained checkpoints.",
+  "variants": {
+    "HDML (\u0111\u1ea7y \u0111\u1ee7: Mamba-3 + Flow + CfC)": {
+      "return_mean": 1494.9306660439456,
+      "return_std": 0.0,
+      "jerk": 0.06279874593019485,
+      "completion_pct": 100.0
+    },
+    "HDML b\u1ecf CfC (Mamba-3 + Flow)": {
+      "return_mean": 1492.7876934949077,
+      "return_std": 0.0,
+      "jerk": 0.060483310371637344,
+      "completion_pct": 100.0
+    },
+    "Mamba-3 + MLP (b\u1ecf CfC v\u00e0 Flow)": {
+      "return_mean": 1446.3956530449977,
+      "return_std": 0.0,
+      "jerk": 0.06674736738204956,
+      "completion_pct": 100.0
+    },
+    "Transformer + CfC (b\u1ecf Mamba-3)": {
+      "return_mean": 1284.179828342969,
+      "return_std": 0.0,
+      "jerk": 0.05350837484002113,
+      "completion_pct": 100.0
+    }
+  }
+}

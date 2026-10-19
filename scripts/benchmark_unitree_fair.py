@@ -19,71 +19,36 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
+from hdml.evaluation.rollout import run_rollout
 from hdml.models import (
-    HDMLModel, DecisionTransformerBaseline, DecisionRNNBaseline,
-    DiffusionPolicyBaseline, IQLBaseline, MLPBCBaseline,
+    DecisionRNNBaseline, DecisionTransformerBaseline, DiffusionPolicyBaseline,
+    HDMLModel, IQLBaseline, MLPBCBaseline,
 )
 from hdml.utils.config import HDMLConfig
-from hdml.utils.metrics import compute_action_smoothness
 
 
 def rollout(model, mtype, cfg, sm, ss, episodes, seed, device):
-    env = QuadrupedDogEnv(max_episode_steps=cfg.env.max_episode_steps)
-    ctx = cfg.training.context_length
-    adim = cfg.model.action_dim
-    returns, jerks, latencies, comps = [], [], [], []
-    for ep in range(episodes):
-        torch.manual_seed(seed + ep)
-        obs, _ = env.reset(seed=seed + ep)
-        hs, ha, hr, ht = [], [], [], []
-        ep_r, ep_a = [], []
-        rtg = float(cfg.env.target_return)
-        for t in range(cfg.env.max_episode_steps):
-            n = (np.asarray(obs, np.float32) - sm) / ss
-            hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-            if not ha:
-                ha.append(np.zeros(adim, np.float32))
-            cl = min(len(hs), ctx)
-            ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-            ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-            tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-            tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
-            if device.type == "cuda":
-                torch.cuda.synchronize()
-            import time as _t
-            t0 = _t.perf_counter()
-            with torch.inference_mode():
-                if mtype == "hdml":
-                    out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
-                elif mtype == "iql":
-                    out = model.get_action(states=ts[:, -1, :])
-                elif mtype == "mlp":
-                    out = model.get_action(ts[:, -1, :], tr[:, -1, :])
-                else:
-                    out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
-            a = out[0] if isinstance(out, tuple) else out
-            if device.type == "cuda":
-                torch.cuda.synchronize()
-            latencies.append((_t.perf_counter() - t0) * 1000.0)
-            a = a[0, 0, :] if a.ndim == 3 else a[0, :]
-            a = np.clip(a.cpu().numpy().astype(np.float32), -1, 1)
-            ha.append(a); ep_a.append(a)
-            obs, r, term, trunc, _ = env.step(a)
-            ep_r.append(float(r)); rtg -= float(r)
-            if term or trunc:
-                break
-        returns.append(float(np.sum(ep_r)))
-        jerks.append(compute_action_smoothness(np.array(ep_a, np.float32)))
-        comps.append(1.0 if len(ep_r) >= cfg.env.max_episode_steps else 0.0)
-    env.close()
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
+    """Closed-loop evaluation; dispatch matches the historical per-script loop."""
+
+    def policy_step(m, ts, ta, tr, tt):
+        if mtype == "hdml":
+            return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
+        if mtype == "iql":
+            return m.get_action(states=ts[:, -1, :])
+        if mtype == "mlp":
+            return m.get_action(ts[:, -1, :], tr[:, -1, :])
+        return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
+
+    result = run_rollout(
+        model, cfg, sm, ss, device, episodes, policy_step,
+        seed_base=seed, manual_torch_seed=True, measure_latency=True,
+    )
     return {
-        "return_mean": float(np.mean(returns)), "return_std": float(np.std(returns)),
-        "completion_pct": float(np.mean(comps) * 100),
-        "jerk": float(np.mean(jerks)),
-        "latency_ms": float(np.mean(latencies)), "freq_hz": float(1000.0 / np.mean(latencies)),
+        "return_mean": float(np.mean(result.returns)), "return_std": float(np.std(result.returns)),
+        "completion_pct": float(np.mean(result.completions) * 100),
+        "jerk": float(np.mean(result.jerks)),
+        "latency_ms": float(np.mean(result.latencies_ms)),
+        "freq_hz": float(1000.0 / np.mean(result.latencies_ms)),
     }
 
 

@@ -224,14 +224,18 @@ __marimo__/
 *.npz
 *.onnx
 *.onnx.data
-!data/.gitkeep
+/deployment/
+checkpoints/*
 !checkpoints/.gitkeep
+!data/.gitkeep
 
 # Runtime logs
 logs/
 *.log
-results
 
+# Experiment artifacts: small JSON/TXT summaries are tracked as evidence;
+# bulky plots, arrays and checkpoints are not (see .gitattributes for LFS).
+/results/**/*.png
 
 # LaTeX build artifacts
 *.aux
@@ -245,3 +249,17 @@ results
 
 # Excluded documents
 KH_thi_KHKT_TP_2026-2027/
+
+# .NET and C# build artifacts
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+.dotnet/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+tests_csharp/bin/
+tests_csharp/obj/

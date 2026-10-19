@@ -1,0 +1,39 @@
+HDML 3D ROBOT BENCHMARK RESULTS - Unitree A1 (12-DoF Quadruped)
+================================================================================
+
+1. HDML (Decision Mamba-3 + Liquid CfC - Ours):
+   Clean Return: 1495.29 +/- 0.00
+   Clean Jerk: 0.0628
+   GPU Latency: 10.75 ms (93.0 Hz)
+   Completion Rate: 100.0%
+   Perturbed Return (50N kick): 1362.98 +/- 23.36
+   Perturbed Jerk: 0.2322
+   Max Roll Deflection: 8.49 deg
+   Balance Recovery Time: 0.110 s
+   Perturbed Completion Rate: 100.0%
+
+2. Decision Transformer Baseline (Causal Self-Attention DT):
+   Clean Return: 1449.12 +/- 0.00
+   Clean Jerk: 0.0733
+   GPU Latency: 2.58 ms (388.3 Hz)
+   Completion Rate: 100.0%
+   Perturbed Return (50N kick): 1437.07 +/- 20.74
+   Perturbed Jerk: 0.1363
+   Max Roll Deflection: 7.14 deg
+   Balance Recovery Time: 0.072 s
+   Perturbed Completion Rate: 100.0%
+
+3. Reactive MLP-BC Baseline (Markovian Feedforward):
+   Clean Return: 1343.94 +/- 0.00
+   Clean Jerk: 0.0663
+   GPU Latency: 0.30 ms (3343.3 Hz)
+   Completion Rate: 100.0%
+   Perturbed Return (50N kick): 1008.27 +/- 10.35
+   Perturbed Jerk: 0.2839
+   Max Roll Deflection: 10.02 deg
+   Balance Recovery Time: 0.077 s
+   Perturbed Completion Rate: 100.0%
+
+4. QUANTITATIVE ADVANTAGE OF HDML OVER BASELINES ON 12-DOF QUADRUPED:
+   - 12-Motor Jerk Reduction vs DT: +14.4%
+   - Perturbation Retention Ratio: 91.2% (HDML) vs 99.2% (DT)

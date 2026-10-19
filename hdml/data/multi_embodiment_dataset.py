@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 class FastEmbodimentBuffer:
+    # Tensors are attached dynamically from ``pack_episodes``; declare them so
+    # static checkers can resolve the attributes set via ``setattr`` below.
+    states: torch.Tensor
+    previous_actions: torch.Tensor
+    actions: torch.Tensor
+    rtgs: torch.Tensor
+    timesteps: torch.Tensor
+    valid_starts: torch.Tensor
+
     def __init__(self, name: str, path: str | Path, context_length: int = 30,
                  gamma: float = 0.99, scale_return: float = 1.0,
                  embodiment_idx: int = 0, split: str = 'train',

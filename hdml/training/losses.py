@@ -139,79 +139,14 @@ class HDMLLoss(nn.Module):
             target_states: Normalized states, shape (B, T, prop_dim).
             mask: Validity mask, shape (B, T).
         """
-        # --- 1. Flow Matching Loss ---
-        if target_velocity is not None and pred_velocity is not None:
-            flow_loss = F.mse_loss(pred_velocity, target_velocity, reduction="none")
-            mask_expanded = mask.unsqueeze(-1).unsqueeze(-1) if pred_velocity.ndim == 4 else mask.unsqueeze(-1)
-            # Normalize by the total number of valid scalar elements (B*T*C*D) so the
-            # flow loss is a proper per-element mean (previously inflated by C*D).
-            num_elements = mask.sum() * (pred_velocity.shape[-1] * pred_velocity.shape[-2] if pred_velocity.ndim == 4 else pred_velocity.shape[-1])
-            if (
-                self.use_advantage_weighting
-                and q1_pred is not None
-                and q2_pred is not None
-                and values_pred is not None
-            ):
-                adv_weights = self._advantage_weights(q1_pred, q2_pred, values_pred, mask)
-                adv_expanded = adv_weights.unsqueeze(-1) if pred_velocity.ndim == 4 else adv_weights
-                flow_loss = (flow_loss * mask_expanded * adv_expanded).sum() / torch.clamp(num_elements, min=1.0)
-            else:
-                flow_loss = (flow_loss * mask_expanded).sum() / torch.clamp(num_elements, min=1.0)
-        else:
-            flow_loss = torch.tensor(0.0, device=mask.device)
-
-        # --- 2. Q-Function Chunk Loss (k-step Bellman MSE) ---
-        if q1_pred is not None and q2_pred is not None and q_target is not None:
-            mask_expanded_q = mask.unsqueeze(-1)
-            q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_expanded_q
-            q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_expanded_q
-            q_loss = (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_expanded_q.sum() * 2, min=1.0)
-        else:
-            q_loss = torch.tensor(0.0, device=mask.device)
-
-        # --- 3. Value Function Loss (IQL expectile regression toward Q) ---
-        # V(s) is regressed toward the lower-bound Q(s, a) via asymmetric expectile
-        # loss (tau < 0.5 penalizes V > Q more, keeping V conservative and below the
-        # upper tail of Q). This yields a meaningful advantage Q - V for DIVO.
-        if values_pred is not None and q1_pred is not None and q2_pred is not None:
-            with torch.no_grad():
-                q_min = torch.minimum(q1_pred, q2_pred).detach()
-            mask_expanded_v = mask.unsqueeze(-1)
-            v_loss = self.expectile_loss(q_min - values_pred, self.value_expectile) * mask_expanded_v
-            v_loss = v_loss.sum() / torch.clamp(mask_expanded_v.sum(), min=1.0)
-        else:
-            v_loss = torch.tensor(0.0, device=mask.device)
-
-        # --- 4. PAVE Loss (Hutchinson Trace Estimator) ---
-        if self.pave_weight > 0.0 and state_repr is not None and action_chunk is not None and torch.is_grad_enabled():
-            pave_loss = self.compute_pave_loss(critic, state_repr, action_chunk, mask)
-        else:
-            pave_loss = torch.tensor(0.0, device=mask.device)
-
-        # --- 5. Grad-CAPS Loss (Action Smoothness WITHIN the predicted chunk) ---
-        # Matches HDMLTrainer: pred_chunk is (B, T, c, D); differentiate along
-        # the chunk axis c (dim=-2) with per-context-step mask weighting.
-        if self.grad_caps_weight > 0.0 and pred_velocity is not None:
-            # Reconstructed predicted action chunk (noise is None for Gaussian head).
-            pred_chunk = pred_velocity if noise is None else pred_velocity + noise
-            if pred_chunk.ndim == 4 and pred_chunk.shape[-2] > 2:
-                accel = pred_chunk[:, :, 2:] - 2 * pred_chunk[:, :, 1:-1] + pred_chunk[:, :, :-2]  # (B, T, c-2, d)
-                accel_norm = (accel ** 2).sum(dim=-1).sum(dim=-1)  # (B, T)
-                grad_caps_loss = (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
-            else:
-                grad_caps_loss = torch.tensor(0.0, device=mask.device)
-        else:
-            grad_caps_loss = torch.tensor(0.0, device=mask.device)
-
-        # --- 6. Forward Dynamics Predictor Loss ---
-        # Matches HDMLTrainer: next_states_pred directly regresses the dataset
-        # "next_states" field, i.e. s_{t+c} after the action chunk (dataset.py).
-        if self.dynamics_weight > 0.0 and next_states_pred is not None:
-            raw_dyn_loss = F.mse_loss(next_states_pred, target_states, reduction="none")
-            dyn_mask = mask.unsqueeze(-1)
-            dyn_loss = (raw_dyn_loss * dyn_mask).sum() / torch.clamp(dyn_mask.sum() * next_states_pred.shape[-1], min=1.0)
-        else:
-            dyn_loss = torch.tensor(0.0, device=mask.device)
+        flow_loss = self._flow_term(
+            target_velocity, pred_velocity, q1_pred, q2_pred, values_pred, mask
+        )
+        q_loss = self._q_term(q1_pred, q2_pred, q_target, mask)
+        v_loss = self._value_term(values_pred, q1_pred, q2_pred, mask)
+        pave_loss = self._pave_term(state_repr, action_chunk, critic, mask)
+        grad_caps_loss = self._grad_caps_term(pred_velocity, noise, mask)
+        dyn_loss = self._dynamics_term(next_states_pred, target_states, mask)
 
         # Total Loss
         total_loss = (
@@ -237,6 +172,117 @@ class HDMLLoss(nn.Module):
         }
 
         return total_loss, loss_dict
+
+    def _flow_term(
+        self,
+        target_velocity: torch.Tensor | None,
+        pred_velocity: torch.Tensor | None,
+        q1_pred: torch.Tensor | None,
+        q2_pred: torch.Tensor | None,
+        values_pred: torch.Tensor | None,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Flow-matching MSE, optionally weighted by bounded AWR advantages."""
+        if target_velocity is None or pred_velocity is None:
+            return torch.tensor(0.0, device=mask.device)
+        flow_loss = F.mse_loss(pred_velocity, target_velocity, reduction="none")
+        mask_expanded = mask.unsqueeze(-1).unsqueeze(-1) if pred_velocity.ndim == 4 else mask.unsqueeze(-1)
+        # Normalize by the total number of valid scalar elements (B*T*C*D) so the
+        # flow loss is a proper per-element mean (previously inflated by C*D).
+        num_elements = mask.sum() * (
+            pred_velocity.shape[-1] * pred_velocity.shape[-2] if pred_velocity.ndim == 4 else pred_velocity.shape[-1]
+        )
+        if (
+            self.use_advantage_weighting
+            and q1_pred is not None
+            and q2_pred is not None
+            and values_pred is not None
+        ):
+            adv_weights = self._advantage_weights(q1_pred, q2_pred, values_pred, mask)
+            adv_expanded = adv_weights.unsqueeze(-1) if pred_velocity.ndim == 4 else adv_weights
+            flow_loss = (flow_loss * mask_expanded * adv_expanded).sum() / torch.clamp(num_elements, min=1.0)
+        else:
+            flow_loss = (flow_loss * mask_expanded).sum() / torch.clamp(num_elements, min=1.0)
+        return flow_loss
+
+    @staticmethod
+    def _q_term(
+        q1_pred: torch.Tensor | None,
+        q2_pred: torch.Tensor | None,
+        q_target: torch.Tensor | None,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """k-step Bellman MSE for the twin chunk critics."""
+        if q1_pred is None or q2_pred is None or q_target is None:
+            return torch.tensor(0.0, device=mask.device)
+        mask_expanded = mask.unsqueeze(-1)
+        q1_loss = F.mse_loss(q1_pred, q_target, reduction="none") * mask_expanded
+        q2_loss = F.mse_loss(q2_pred, q_target, reduction="none") * mask_expanded
+        return (q1_loss.sum() + q2_loss.sum()) / torch.clamp(mask_expanded.sum() * 2, min=1.0)
+
+    def _value_term(
+        self,
+        values_pred: torch.Tensor | None,
+        q1_pred: torch.Tensor | None,
+        q2_pred: torch.Tensor | None,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """IQL expectile regression of V(s) toward the conservative min-Q."""
+        if values_pred is None or q1_pred is None or q2_pred is None:
+            return torch.tensor(0.0, device=mask.device)
+        with torch.no_grad():
+            q_min = torch.minimum(q1_pred, q2_pred).detach()
+        mask_expanded = mask.unsqueeze(-1)
+        v_loss = self.expectile_loss(q_min - values_pred, self.value_expectile) * mask_expanded
+        return v_loss.sum() / torch.clamp(mask_expanded.sum(), min=1.0)
+
+    def _pave_term(
+        self,
+        state_repr: torch.Tensor | None,
+        action_chunk: torch.Tensor | None,
+        critic: nn.Module,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """PAVE Hutchinson trace penalty (only when gradients are enabled)."""
+        if (
+            self.pave_weight > 0.0
+            and state_repr is not None
+            and action_chunk is not None
+            and torch.is_grad_enabled()
+        ):
+            return self.compute_pave_loss(critic, state_repr, action_chunk, mask)
+        return torch.tensor(0.0, device=mask.device)
+
+    def _grad_caps_term(
+        self,
+        pred_velocity: torch.Tensor | None,
+        noise: torch.Tensor | None,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Second-order smoothness penalty *within* the predicted action chunk."""
+        if self.grad_caps_weight <= 0.0 or pred_velocity is None:
+            return torch.tensor(0.0, device=mask.device)
+        pred_chunk = pred_velocity if noise is None else pred_velocity + noise
+        if pred_chunk.ndim != 4 or pred_chunk.shape[-2] <= 2:
+            return torch.tensor(0.0, device=mask.device)
+        accel = pred_chunk[:, :, 2:] - 2 * pred_chunk[:, :, 1:-1] + pred_chunk[:, :, :-2]
+        accel_norm = (accel**2).sum(dim=-1).sum(dim=-1)  # (B, T)
+        return (accel_norm * mask).sum() / torch.clamp(mask.sum(), min=1.0)
+
+    def _dynamics_term(
+        self,
+        next_states_pred: torch.Tensor | None,
+        target_states: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Forward-dynamics prediction loss (s_{t+c} after the action chunk)."""
+        if self.dynamics_weight <= 0.0 or next_states_pred is None:
+            return torch.tensor(0.0, device=mask.device)
+        raw_dyn_loss = F.mse_loss(next_states_pred, target_states, reduction="none")
+        dyn_mask = mask.unsqueeze(-1)
+        return (raw_dyn_loss * dyn_mask).sum() / torch.clamp(
+            dyn_mask.sum() * next_states_pred.shape[-1], min=1.0
+        )
 
     def compute_pave_loss(
         self, critic: nn.Module, state_repr: torch.Tensor, action_chunk: torch.Tensor, mask: torch.Tensor

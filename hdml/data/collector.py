@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Callable
 import gymnasium as gym
 import numpy as np
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def discount_cumsum(x: np.ndarray, gamma: float) -> np.ndarray:
 
 class MediumExpertLocomotionPolicy:
     """Phase-Coupled Central Pattern Generator (CPG) with dynamic state feedback.
-    
+
     Generates high-return expert & medium-expert locomotion trajectories for D4RL MuJoCo benchmarks.
     """
 
@@ -198,7 +197,7 @@ class TrajectoryCollector:
                 "returns_to_go": rtg_arr,
                 "dones": done_arr,
                 "timesteps": time_arr,
-                "total_return": np.float32(ep_return),
+                "total_return": np.asarray(ep_return, dtype=np.float32),
             }
             trajectories.append(traj)
 

@@ -22,6 +22,7 @@ import seaborn as sns
 import torch
 
 from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
+from hdml.evaluation.rollout import UnitreeRolloutContext, to_action
 from hdml.models import DecisionTransformerBaseline, HDMLModel
 from hdml.utils.config import HDMLConfig
 from hdml.utils.metrics import compute_action_smoothness
@@ -30,39 +31,24 @@ from hdml.utils.metrics import compute_action_smoothness
 def rollout(model, mtype, cfg, device, sm, ss, steps, seed=42):
     env = QuadrupedDogEnv(max_episode_steps=steps)
     obs, _ = env.reset(seed=seed)
-    ctx = cfg.training.context_length
-    adim = cfg.model.action_dim
-    hs, ha, hr, ht = [], [], [], []
-    act = []
-    rtg = float(cfg.env.target_return)
+    context = UnitreeRolloutContext(cfg, sm, ss, device)
     for t in range(steps):
-        n = (np.asarray(obs, np.float32) - sm) / ss
-        hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-        if not ha:
-            ha.append(np.zeros(adim, np.float32))
-        cl = min(len(hs), ctx)
-        ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-        ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-        tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-        tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
+        ts, ta, tr, tt = context.update(obs, t)
         with torch.inference_mode():
             if mtype == "hdml":
                 out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
             else:
                 out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
-        a = out[0] if isinstance(out, tuple) else out
-        a = a[0, 0, :] if a.ndim == 3 else a[0, :]
-        a = np.clip(a.detach().cpu().numpy().astype(np.float32), -1, 1)
-        ha.append(a)
-        act.append(a)
-        obs, r, term, trunc, _ = env.step(a)
-        rtg -= float(r)
-        if term or trunc:
+        action = to_action(out)
+        context.record_action(action)
+        obs, reward, terminated, truncated, _ = env.step(action)
+        context.consume_reward(float(reward))
+        if terminated or truncated:
             break
     env.close()
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    arr = np.asarray(act, np.float32)
+    arr = np.asarray(context.actions, np.float32)
     jerk = np.zeros(len(arr), np.float32)
     for i in range(2, len(arr)):
         jerk[i] = np.mean(np.abs(arr[i] - 2 * arr[i - 1] + arr[i - 2]))

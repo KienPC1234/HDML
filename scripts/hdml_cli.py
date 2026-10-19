@@ -145,14 +145,14 @@ def main() -> None:
     # 6. benchmark-baselines
     p_bb = subparsers.add_parser("benchmark-baselines", help="Benchmark HDML against SOTA baselines")
     p_bb.add_argument("--config", type=str, default="configs/halfcheetah_v5_default.yaml")
-    p_bb.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
+    p_bb.add_argument("--checkpoint", type=str, default="checkpoints/rebuild_long/halfcheetah_v5/best_model.pt")
     p_bb.add_argument("--episodes", type=int, default=5)
     p_bb.add_argument("--device", type=str, default="cuda")
     p_bb.set_defaults(func=cmd_benchmark_baselines)
 
     # 7. export-onnx
     p_eo = subparsers.add_parser("export-onnx", help="Export HDML model to ONNX format")
-    p_eo.add_argument("--checkpoint", type=str, default="checkpoints/halfcheetah_v5/best_model.pt")
+    p_eo.add_argument("--checkpoint", type=str, default="checkpoints/rebuild_long/halfcheetah_v5/best_model.pt")
     p_eo.add_argument("--output", type=str, default="deployment/model.onnx")
     p_eo.add_argument("--config", default="configs/halfcheetah_v5_default.yaml")
     p_eo.set_defaults(func=cmd_export_onnx)

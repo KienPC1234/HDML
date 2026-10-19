@@ -1,0 +1,14 @@
+{
+  "created_utc": "2026-10-09T03:31:13.796500+00:00",
+  "config": "configs/halfcheetah_v5_default.yaml",
+  "checkpoint": "checkpoints/rebuild/halfcheetah_v5/best_model.pt",
+  "env": "HalfCheetah-v5",
+  "device": "cuda",
+  "context_length": 20,
+  "pure_inference_ms": 8.139763193130493,
+  "pure_inference_hz": 122.85369687952891,
+  "closed_loop_cycle_ms": 9.022173005214427,
+  "closed_loop_hz": 110.83804305482096,
+  "cycle_samples": 3000,
+  "note": "closed-loop includes sensor read, normalisation, model inference and env physics step"
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Callable, Any
 import numpy as np
@@ -27,9 +28,12 @@ def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
         Normalized score in [0, 100+] relative to D4RL random/expert bounds.
         Returns the raw return unchanged if no reference is known for env_name.
     """
-    env_key = env_name.lower()
+    # Match the environment family as a whole token, not a substring: "Ant-v4"
+    # matches "ant", while "antmaze-medium-v2" must NOT inherit Ant's bounds
+    # (D4RL uses different reference scores for AntMaze).
+    tokens = set(re.split(r"[^a-z0-9]+", env_name.lower()))
     for key, (r_score, e_score) in D4RL_REF_SCORES.items():
-        if key in env_key:
+        if key in tokens:
             return 100.0 * (raw_return - r_score) / (e_score - r_score)
     return raw_return
 

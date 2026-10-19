@@ -1,0 +1,104 @@
+{
+  "robot": "Unitree A1 Quadruped Dog (12-DoF 3D)",
+  "baselines_missing": false,
+  "uncertainty_scope": "2 episodes of one checkpoint per model, not independent training seeds",
+  "hdml": {
+    "params_count": 1419567,
+    "clean": {
+      "mean_return": 1495.2910121808436,
+      "std_return": 0.0,
+      "returns": [
+        1495.2910121808436,
+        1495.2910121808436
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.06277067214250565,
+      "latency_ms": 10.747431426192634,
+      "frequency_hz": 93.04548783283172,
+      "max_roll_deg": 6.303517522372839,
+      "recovery_time_sec": 0.0
+    },
+    "perturbed": {
+      "mean_return": 1362.976847001435,
+      "std_return": 23.362412699771312,
+      "returns": [
+        1339.6144343016638,
+        1386.3392597012064
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.2322355955839157,
+      "latency_ms": 8.067979336366989,
+      "frequency_hz": 123.9467725818817,
+      "max_roll_deg": 8.487992462661374,
+      "recovery_time_sec": 0.10999999999999999
+    }
+  },
+  "dt": {
+    "params_count": 1210764,
+    "clean": {
+      "mean_return": 1449.1200301246856,
+      "std_return": 0.0,
+      "returns": [
+        1449.1200301246856,
+        1449.1200301246856
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.07334629446268082,
+      "latency_ms": 2.5753321445081383,
+      "frequency_hz": 388.29942853487336,
+      "max_roll_deg": 7.509193459600992,
+      "recovery_time_sec": 0.0
+    },
+    "perturbed": {
+      "mean_return": 1437.0712401559172,
+      "std_return": 20.742379349619,
+      "returns": [
+        1416.328860806298,
+        1457.813619505536
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.1362842172384262,
+      "latency_ms": 2.530942056211643,
+      "frequency_hz": 395.10979619059987,
+      "max_roll_deg": 7.135859596194259,
+      "recovery_time_sec": 0.0725
+    }
+  },
+  "mlp": {
+    "params_count": 78348,
+    "clean": {
+      "mean_return": 1343.9433750158214,
+      "std_return": 0.0,
+      "returns": [
+        1343.9433750158214,
+        1343.9433750158214
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.06626402586698532,
+      "latency_ms": 0.2991017713211477,
+      "frequency_hz": 3343.343623753712,
+      "max_roll_deg": 6.511006189316455,
+      "recovery_time_sec": 0.0
+    },
+    "perturbed": {
+      "mean_return": 1008.271280798738,
+      "std_return": 10.346639474052097,
+      "returns": [
+        1018.6179202727901,
+        997.9246413246859
+      ],
+      "mean_length": 1000.0,
+      "completion_rate": 100.0,
+      "mean_jerk": 0.2839146554470062,
+      "latency_ms": 0.29917808558093384,
+      "frequency_hz": 3342.490804626395,
+      "max_roll_deg": 10.020035266358043,
+      "recovery_time_sec": 0.0775
+    }
+  }
+}

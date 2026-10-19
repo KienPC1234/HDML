@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from typing import Any, cast
+
 import torch
 import torch.nn as nn
 from hdml.models.fusion import CrossModalFusion
@@ -52,6 +55,7 @@ class HDMLModel(nn.Module):
         mamba3_chunk: int = 64,
         use_cfc: bool = True,
         use_critic: bool = True,
+        num_flow_steps: int = 4,
     ) -> None:
         super().__init__()
         self.prop_dim = prop_dim
@@ -59,7 +63,7 @@ class HDMLModel(nn.Module):
         self.d_model = d_model
         self.d_subgoal = prop_dim if d_subgoal is None else d_subgoal
         self.use_flow = (action_policy == "flow")
-        self.num_flow_steps = 4
+        self.num_flow_steps = int(num_flow_steps)
         self.chunk_size = chunk_size
         self.use_cfc = use_cfc
         self.use_critic = use_critic
@@ -83,8 +87,7 @@ class HDMLModel(nn.Module):
         #    Native Mamba-3 uses fused CUDA/Triton kernels; fall back to the
         #    legacy Mamba-1+RoPE block on CPU-only hosts.
         if use_native_mamba3 and not torch.cuda.is_available():
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
+            logging.getLogger(__name__).warning(
                 "CUDA unavailable: falling back to legacy Mamba-1 backbone."
             )
             use_native_mamba3 = False
@@ -338,6 +341,7 @@ class HDMLModel(nn.Module):
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx,
         )
+        assert actions_pred is not None, "encode(with_action=True) must return actions"
         return actions_pred, subgoals_pred, values_pred, next_states_pred, next_hx
 
     @torch.inference_mode()
@@ -349,7 +353,7 @@ class HDMLModel(nn.Module):
         timesteps: torch.Tensor | None = None,
         visual_frames: torch.Tensor | None = None,
         hx: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None, dict[str, torch.Tensor]]:
         """Step inference for closed-loop rollouts; returns the last-step action."""
         if states.shape[1] > 1 and hx is not None:
             raise ValueError("Overlapping context must use hx=None; otherwise history is replayed twice")
@@ -357,6 +361,7 @@ class HDMLModel(nn.Module):
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx, action_last_only=True,
         )
+        assert actions_pred is not None, "encode(with_action=True) must return actions"
         last_action = actions_pred[:, -1, :]
         last_subgoal = subgoals_pred[:, -1, :]
         return last_action, next_hx, {
@@ -399,11 +404,12 @@ class HDMLModel(nn.Module):
         if rtg.ndim == 1:
             rtg = rtg.unsqueeze(-1)
         flow_context = torch.cat([subgoal, current_prop, rtg], dim=-1)  # (B, context_dim)
-        sampler = getattr(self.flow_policy, "sample_deterministic", None)
+        flow_policy = cast(Any, self.flow_policy)
+        sampler = getattr(flow_policy, "sample_deterministic", None)
         chunk = (
             sampler(flow_context, num_steps=num_flow_steps)
             if sampler is not None
-            else self.flow_policy.sample(flow_context)  # type: ignore[union-attr]
+            else flow_policy.sample(flow_context)
         )
         nominal = chunk[:, 0, :]  # (B, action_dim)
         if latent is None:

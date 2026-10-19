@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 import numpy as np
 
 
@@ -21,7 +20,7 @@ class SensorNoisePerturbation:
         """Apply noise and dropouts to observation vector."""
         noisy_obs = obs + self.rng.normal(0.0, self.noise_std, size=obs.shape).astype(np.float32)
         if self.dropout_prob > 0:
-            mask = (self.rng.uniform(size=obs.shape) > self.dropout_prob).astype(np.float32)
+            mask: np.ndarray = (self.rng.uniform(size=obs.shape) > self.dropout_prob).astype(np.float32)
             noisy_obs = noisy_obs * mask
         return noisy_obs
 

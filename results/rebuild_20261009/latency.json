@@ -1,0 +1,16 @@
+{
+  "created_utc": "2026-10-09T04:31:13.303584+00:00",
+  "config": "configs/halfcheetah_v5_default.yaml",
+  "checkpoint": "checkpoints/rebuild_long/halfcheetah_v5/best_model.pt",
+  "env": "HalfCheetah-v5",
+  "device": "cuda",
+  "context_length": 20,
+  "pure_inference_ms": 8.336575849056244,
+  "pure_inference_hz": 119.95332593455701,
+  "closed_loop_cycle_ms": 9.248199164091298,
+  "closed_loop_hz": 108.12915922948305,
+  "cpu_portable_inference_ms": 11.218403750099242,
+  "cpu_portable_inference_hz": 89.13924139975383,
+  "cycle_samples": 3000,
+  "note": "closed-loop includes sensor read, normalisation, model inference and env physics step; cpu path is the portable Mamba-1 deployment wrapper"
+}

@@ -1,0 +1,419 @@
+{
+  "protocol_version": 2,
+  "created_utc": "2026-10-08T15:55:34.600478+00:00",
+  "config": {
+    "model": {
+      "prop_dim": 17,
+      "action_dim": 6,
+      "chunk_size": 4,
+      "d_model": 128,
+      "d_state": 16,
+      "d_conv": 4,
+      "expand": 2,
+      "num_mamba_layers": 3,
+      "d_subgoal": 64,
+      "cfc_units": 32,
+      "cfc_backbone_units": 64,
+      "cfc_backbone_layers": 1,
+      "cfc_residual": 0.05,
+      "use_visual": false,
+      "visual_channels": 1,
+      "visual_image_size": 64,
+      "dropout": 0.1,
+      "action_policy": "gaussian",
+      "device": "cuda"
+    },
+    "training": {
+      "learning_rate": 0.0003,
+      "weight_decay": 0.0001,
+      "warmup_steps": 500,
+      "max_epochs": 4,
+      "batch_size": 256,
+      "context_length": 20,
+      "gamma": 0.99,
+      "grad_clip_norm": 1.0,
+      "flow_weight": 1.0,
+      "q_weight": 1.0,
+      "value_weight": 1.0,
+      "pave_weight": 0.001,
+      "grad_caps_weight": 0.01,
+      "dynamics_weight": 0.1,
+      "reg_loss_weight": 0.01,
+      "subgoal_loss_weight": 0.1,
+      "use_advantage_weighting": true,
+      "advantage_temperature": 1.0,
+      "cfc_residual": 0.5,
+      "eval_interval": 1,
+      "save_interval": 1,
+      "seed": 42,
+      "use_amp": true,
+      "amp_dtype": "bfloat16",
+      "num_workers": 0,
+      "prefetch_factor": 2,
+      "pin_memory": false,
+      "persistent_workers": false,
+      "use_fast_dataset": true,
+      "use_tensorboard": true,
+      "use_wandb": false,
+      "wandb_project": "hdml-robotics",
+      "wandb_run_name": null,
+      "output_dir": "checkpoints/halfcheetah_v5",
+      "log_dir": "logs/halfcheetah_v5"
+    },
+    "env": {
+      "env_name": "HalfCheetah-v5",
+      "max_episode_steps": 1000,
+      "target_return": 12000.0,
+      "scale_return": 1000.0,
+      "num_eval_episodes": 5,
+      "render_mode": null,
+      "seed": 42
+    }
+  },
+  "evaluation_seed": 42,
+  "episodes": 5,
+  "uncertainty_scope": "episodes of one checkpoint per model, not independent training seeds",
+  "perturbation": {
+    "kind": "action_additive_uniform",
+    "probability": 0.05,
+    "magnitude": 0.6,
+    "sensor_std": 0.05,
+    "sensor_dropout_probability": 0.02
+  },
+  "checkpoint_sha256": {
+    "checkpoints/halfcheetah_v5/best_model.pt": "c6f0e76001e9dc63658b337790aa0b4dfdc8e8e1b87dfc4e04ae8e09c339b76d",
+    "checkpoints/halfcheetah_v5/baselines/dt_best.pt": "1cdca92e683dcdb08e67c106e37c1e88aeaf4c703d85b06effd26632ec523d2b",
+    "checkpoints/halfcheetah_v5/baselines/rnn_best.pt": "bb78ceee0b48a5af1f60414d8351e607cfeb3fd9e32ac894aac8630977fe0907",
+    "checkpoints/halfcheetah_v5/baselines/diffusion_best.pt": "77a6b6b430e78a47865cff61dc6a010c160b571f5c4c27331adb7d41d4a5e66e",
+    "checkpoints/halfcheetah_v5/baselines/iql_best.pt": "5e8879821e48758b750ef5fbaaab751e25046362628c55fbfbf0d9830ad87e92",
+    "checkpoints/halfcheetah_v5/baselines/mlp_best.pt": "8880f13f530216caa036bd74681f7942a12f14241c5430578b15b6ff6ea28549"
+  },
+  "standard": [
+    {
+      "model_type": "hdml",
+      "mean_return": 6435.03234700967,
+      "std_return": 3770.381840082938,
+      "d4rl_normalized_score": 54.088714599609375,
+      "returns_array": [
+        11054.8564453125,
+        1392.50732421875,
+        8973.654296875,
+        8172.23681640625,
+        2581.906494140625
+      ],
+      "norm_scores_array": [
+        91.29981231689453,
+        13.47291088104248,
+        74.53644561767578,
+        68.08130645751953,
+        23.05311393737793
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.6083132892847061,
+      "mean_latency_ms": 13.827549507108051,
+      "frequency_hz": 72.31939393787381,
+      "params_count": 1441713,
+      "name": "HDML (Decision Mamba + Liquid CfC - Ours)"
+    },
+    {
+      "model_type": "diffusion",
+      "mean_return": -298.6616839576694,
+      "std_return": 67.5323636532252,
+      "d4rl_normalized_score": -0.14887377619743347,
+      "returns_array": [
+        -296.3880920410156,
+        -236.7522430419922,
+        -329.5335998535156,
+        -221.8900909423828,
+        -408.744384765625
+      ],
+      "norm_scores_array": [
+        -0.13056088984012604,
+        0.34978553652763367,
+        -0.39753639698028564,
+        0.4694949984550476,
+        -1.0355521440505981
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 1.258026909828186,
+      "mean_latency_ms": 6.757687273004558,
+      "frequency_hz": 147.97962077866126,
+      "params_count": 153606,
+      "name": "Diffusion Policy (DDPM 10-step Denoising)"
+    },
+    {
+      "model_type": "dt",
+      "mean_return": 9540.618442234361,
+      "std_return": 5127.885146998656,
+      "d4rl_normalized_score": 79.1031494140625,
+      "returns_array": [
+        12726.5615234375,
+        13226.294921875,
+        -289.9709777832031,
+        9186.6171875,
+        12853.58984375
+      ],
+      "norm_scores_array": [
+        104.76482391357422,
+        108.79000854492188,
+        -0.07887312769889832,
+        76.25178527832031,
+        105.78799438476562
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.8108747512102127,
+      "mean_latency_ms": 2.3968266732641497,
+      "frequency_hz": 417.2183208551067,
+      "params_count": 1206918,
+      "name": "Decision Transformer (Causal Attention DT)"
+    },
+    {
+      "model_type": "iql",
+      "mean_return": -38.29802442268099,
+      "std_return": 31.20174029178142,
+      "d4rl_normalized_score": 1.9482660293579102,
+      "returns_array": [
+        -47.03422546386719,
+        -57.30341339111328,
+        23.54908561706543,
+        -51.91868591308594,
+        -58.78287887573242
+      ],
+      "norm_scores_array": [
+        1.877898931503296,
+        1.7951841354370117,
+        2.446423292160034,
+        1.8385562896728516,
+        1.783267617225647
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.007971807336434721,
+      "mean_latency_ms": 0.29440737306140363,
+      "frequency_hz": 3396.65406338663,
+      "params_count": 286985,
+      "name": "Implicit Q-Learning (IQL / Value-Advantage)"
+    },
+    {
+      "model_type": "rnn",
+      "mean_return": 5940.249926066514,
+      "std_return": 6347.645268718063,
+      "d4rl_normalized_score": 50.103416442871094,
+      "returns_array": [
+        -133.03140258789062,
+        -191.87889099121094,
+        2836.2958984375,
+        13870.9814453125,
+        13318.8828125
+      ],
+      "norm_scores_array": [
+        1.1852211952209473,
+        0.7112249135971069,
+        25.10213279724121,
+        113.98273468017578,
+        109.5357666015625
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.4802337035536766,
+      "mean_latency_ms": 1.1797287990106269,
+      "frequency_hz": 847.6524442216249,
+      "params_count": 1008390,
+      "name": "Decision RNN (LSTM Recurrent Policy)"
+    },
+    {
+      "model_type": "mlp",
+      "mean_return": -311.93518626329507,
+      "std_return": 1.3608905788290002,
+      "d4rl_normalized_score": -0.25578728318214417,
+      "returns_array": [
+        -312.8662414550781,
+        -309.4664001464844,
+        -313.0609130859375,
+        -312.8290100097656,
+        -311.453369140625
+      ],
+      "norm_scores_array": [
+        -0.26328665018081665,
+        -0.23590205609798431,
+        -0.2648545801639557,
+        -0.26298677921295166,
+        -0.25190630555152893
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.0028036409523338078,
+      "mean_latency_ms": 0.3556520011159591,
+      "frequency_hz": 2811.7373074303423,
+      "params_count": 72198,
+      "name": "MLP-BC (Standard Feedforward Reactive)"
+    }
+  ],
+  "perturbed": [
+    {
+      "model_type": "hdml",
+      "mean_return": 1331.1233860033058,
+      "std_return": 1159.9420225847077,
+      "d4rl_normalized_score": 12.978485107421875,
+      "returns_array": [
+        3518.965087890625,
+        1073.2987060546875,
+        410.4825744628906,
+        1334.9638671875,
+        317.90667724609375
+      ],
+      "norm_scores_array": [
+        30.600799560546875,
+        10.901795387268066,
+        5.563039779663086,
+        13.009418487548828,
+        4.817372798919678
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.5123430222272873,
+      "mean_latency_ms": 13.748129500530194,
+      "frequency_hz": 72.73716762425283,
+      "params_count": 1441713,
+      "name": "HDML (Decision Mamba + Liquid CfC - Ours)"
+    },
+    {
+      "model_type": "diffusion",
+      "mean_return": -300.86120162399686,
+      "std_return": 46.94776427374005,
+      "d4rl_normalized_score": -0.1665901243686676,
+      "returns_array": [
+        -215.70469665527344,
+        -316.8688049316406,
+        -288.28125,
+        -339.03033447265625,
+        -344.42095947265625
+      ],
+      "norm_scores_array": [
+        0.5193162560462952,
+        -0.29552578926086426,
+        -0.06526283919811249,
+        -0.4740293323993683,
+        -0.5174489617347717
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 1.2648798465728759,
+      "mean_latency_ms": 6.724191134120337,
+      "frequency_hz": 148.716772033105,
+      "params_count": 153606,
+      "name": "Diffusion Policy (DDPM 10-step Denoising)"
+    },
+    {
+      "model_type": "dt",
+      "mean_return": -58.38012970143153,
+      "std_return": 231.00659861631314,
+      "d4rl_normalized_score": 1.7865116596221924,
+      "returns_array": [
+        379.6125793457031,
+        -266.6280517578125,
+        -38.41825485229492,
+        -178.7481231689453,
+        -187.7188262939453
+      ],
+      "norm_scores_array": [
+        5.314392566680908,
+        0.10914622247219086,
+        1.9472976922988892,
+        0.8169887661933899,
+        0.7447328567504883
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.3118402183055878,
+      "mean_latency_ms": 2.3943363262573256,
+      "frequency_hz": 417.65226924620754,
+      "params_count": 1206918,
+      "name": "Decision Transformer (Causal Attention DT)"
+    },
+    {
+      "model_type": "iql",
+      "mean_return": -12.654931733789073,
+      "std_return": 18.079722563056897,
+      "d4rl_normalized_score": 2.1548123359680176,
+      "returns_array": [
+        -19.8339900970459,
+        -24.61119270324707,
+        -9.723970413208008,
+        -30.047945022583008,
+        20.942440032958984
+      ],
+      "norm_scores_array": [
+        2.09698748588562,
+        2.05850887298584,
+        2.178420305252075,
+        2.0147175788879395,
+        2.4254276752471924
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.11739515215158462,
+      "mean_latency_ms": 0.2933687559445389,
+      "frequency_hz": 3408.679280724254,
+      "params_count": 286985,
+      "name": "Implicit Q-Learning (IQL / Value-Advantage)"
+    },
+    {
+      "model_type": "rnn",
+      "mean_return": 661.2445879898942,
+      "std_return": 529.9015626075065,
+      "d4rl_normalized_score": 7.582841396331787,
+      "returns_array": [
+        629.6094970703125,
+        -184.7627410888672,
+        1384.849365234375,
+        462.7806396484375,
+        1013.7461547851562
+      ],
+      "norm_scores_array": [
+        7.32803201675415,
+        0.7685430645942688,
+        13.411229133605957,
+        5.984282493591309,
+        10.422121047973633
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.3919581025838852,
+      "mean_latency_ms": 1.1759179976885208,
+      "frequency_hz": 850.3994342851122,
+      "params_count": 1008390,
+      "name": "Decision RNN (LSTM Recurrent Policy)"
+    },
+    {
+      "model_type": "mlp",
+      "mean_return": -323.11860473440095,
+      "std_return": 5.698953887809658,
+      "d4rl_normalized_score": -0.3458658456802368,
+      "returns_array": [
+        -330.9045104980469,
+        -328.6166687011719,
+        -315.9942932128906,
+        -320.99127197265625,
+        -319.0862731933594
+      ],
+      "norm_scores_array": [
+        -0.40857869386672974,
+        -0.3901509940624237,
+        -0.2884819805622101,
+        -0.328730970621109,
+        -0.3133867084980011
+      ],
+      "mean_length": 1000.0,
+      "episode_completion_rate": 100.0,
+      "mean_smoothness_jerk": 0.33847983479499816,
+      "mean_latency_ms": 0.3578786567901261,
+      "frequency_hz": 2794.243191167555,
+      "params_count": 72198,
+      "name": "MLP-BC (Standard Feedforward Reactive)"
+    }
+  ]
+}

@@ -29,64 +29,27 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
-from hdml.models import (
-    DecisionTransformerBaseline,
-    HDMLModel,
-    MambaMLPHeadAblation,
-    TransformerLiquidHeadAblation,
-)
-from hdml.models.flow_policy import GaussianActionPolicy
+from hdml.evaluation.rollout import run_rollout
+from hdml.models import HDMLModel, MambaMLPHeadAblation, TransformerLiquidHeadAblation
 from hdml.utils.config import HDMLConfig
-from hdml.utils.metrics import compute_action_smoothness
 
 
 def rollout(model, mtype, cfg, sm, ss, episodes, device):
-    env = QuadrupedDogEnv(max_episode_steps=cfg.env.max_episode_steps)
-    ctx = cfg.training.context_length
-    adim = cfg.model.action_dim
-    returns, jerks, comps = [], [], []
-    for ep in range(episodes):
-        obs, _ = env.reset(seed=42 + ep)
-        hs, ha, hr, ht = [], [], [], []
-        ep_r, ep_a = [], []
-        rtg = float(cfg.env.target_return)
-        for t in range(cfg.env.max_episode_steps):
-            n = (np.asarray(obs, np.float32) - sm) / ss
-            hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-            if not ha:
-                ha.append(np.zeros(adim, np.float32))
-            cl = min(len(hs), ctx)
-            ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-            ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-            tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-            tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
-            with torch.inference_mode():
-                if mtype in ("hdml", "hdml_nocfc", "hdml_noflow"):
-                    out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
-                elif mtype == "mamba_mlp":
-                    out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
-                elif mtype == "transformer_liquid":
-                    out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
-                else:
-                    raise ValueError(mtype)
-            a = out[0] if isinstance(out, tuple) else out
-            a = a[0, 0, :] if a.ndim == 3 else a[0, :]
-            a = np.clip(a.detach().cpu().numpy().astype(np.float32), -1, 1)
-            ha.append(a); ep_a.append(a)
-            obs, r, term, trunc, _ = env.step(a)
-            ep_r.append(float(r)); rtg -= float(r)
-            if term or trunc:
-                break
-        returns.append(float(np.sum(ep_r)))
-        jerks.append(compute_action_smoothness(np.array(ep_a, np.float32)))
-        comps.append(1.0 if len(ep_r) >= cfg.env.max_episode_steps else 0.0)
-    env.close()
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
+    """Closed-loop ablation evaluation with the shared rollout bookkeeping."""
+
+    def policy_step(m, ts, ta, tr, tt):
+        if mtype in ("hdml", "hdml_nocfc", "hdml_noflow"):
+            return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
+        if mtype == "mamba_mlp":
+            return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt)
+        if mtype == "transformer_liquid":
+            return m.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
+        raise ValueError(mtype)
+
+    result = run_rollout(model, cfg, sm, ss, device, episodes, policy_step, seed_base=42)
     return {
-        "return_mean": float(np.mean(returns)), "return_std": float(np.std(returns)),
-        "jerk": float(np.mean(jerks)), "completion_pct": float(np.mean(comps) * 100),
+        "return_mean": float(np.mean(result.returns)), "return_std": float(np.std(result.returns)),
+        "jerk": float(np.mean(result.jerks)), "completion_pct": float(np.mean(result.completions) * 100),
     }
 
 

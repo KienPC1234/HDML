@@ -21,13 +21,9 @@ import numpy as np
 import torch
 
 from hdml.evaluation.quadruped_dog_env import QuadrupedDogEnv
+from hdml.evaluation.rollout import UnitreeRolloutContext, to_action, torso_roll
 from hdml.models import HDMLModel
 from hdml.utils.config import HDMLConfig
-
-
-def torso_roll(obs: np.ndarray) -> float:
-    w, x, y, z = float(obs[1]), float(obs[2]), float(obs[3]), float(obs[4])
-    return float(np.degrees(np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))))
 
 
 def load_cfc_contribution(cfg, device, ck, sm, ss, steps=300):
@@ -37,31 +33,20 @@ def load_cfc_contribution(cfg, device, ck, sm, ss, steps=300):
     h.deterministic = True; h.num_flow_steps = 4
     env = QuadrupedDogEnv(max_episode_steps=steps)
     obs, _ = env.reset(seed=42)
-    ctx = cfg.training.context_length
-    ad = cfg.model.action_dim
-    hs, ha, hr, ht = [], [], [], []
-    rtg = float(cfg.env.target_return)
+    context = UnitreeRolloutContext(cfg, sm, ss, device)
     deltas = []
     for t in range(steps):
-        n = (np.asarray(obs, np.float32) - sm) / ss
-        hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-        if not ha:
-            ha.append(np.zeros(ad, np.float32))
-        cl = min(len(hs), ctx)
-        ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-        ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-        tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-        tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
+        ts, ta, tr, tt = context.update(obs, t)
         with torch.inference_mode():
             _sg, lat, _v, _ns, _fc, executed, _hx = h.encode(states=ts, rtgs=tr, actions=ta, timesteps=tt)
             nominal = h._sample_chunk(_fc[:, -1:, :])[:, :, 0, :]  # (B,1,ad)
             nominal = nominal[:, -1, :]
         deltas.append(float((executed[:, -1, :] - nominal).abs().mean().item()))
-        a = np.clip(executed[:, -1, :].cpu().numpy().astype(np.float32)[0], -1, 1)
-        ha.append(a)
-        obs, r, term, trunc, _ = env.step(a)
-        rtg -= float(r)
-        if term or trunc:
+        action = np.clip(executed[:, -1, :].cpu().numpy().astype(np.float32)[0], -1, 1)
+        context.record_action(action)
+        obs, reward, terminated, truncated, _ = env.step(action)
+        context.consume_reward(float(reward))
+        if terminated or truncated:
             break
     env.close()
     if device.type == "cuda":
@@ -72,43 +57,32 @@ def load_cfc_contribution(cfg, device, ck, sm, ss, steps=300):
 def rollout(model, cfg, sm, ss, force, kick_step, seed, max_steps, device):
     env = QuadrupedDogEnv(max_episode_steps=max_steps)
     obs, _ = env.reset(seed=seed)
-    ctx = cfg.training.context_length
-    ad = cfg.model.action_dim
-    hs, ha, hr, ht = [], [], [], []
-    ep_r = []
+    context = UnitreeRolloutContext(cfg, sm, ss, device)
+    episode_return = 0.0
     rolls = []
-    rtg = float(cfg.env.target_return)
     for t in range(max_steps):
-        n = (np.asarray(obs, np.float32) - sm) / ss
-        hs.append(n); hr.append(rtg / cfg.env.scale_return); ht.append(t)
-        if not ha:
-            ha.append(np.zeros(ad, np.float32))
-        cl = min(len(hs), ctx)
-        ts = torch.from_numpy(np.array(hs[-cl:], np.float32)).unsqueeze(0).to(device)
-        ta = torch.from_numpy(np.array(ha[-cl:], np.float32)).unsqueeze(0).to(device)
-        tr = torch.from_numpy(np.array(hr[-cl:], np.float32).reshape(-1, 1)).unsqueeze(0).to(device)
-        tt = torch.from_numpy(np.array(ht[-cl:], np.int64)).unsqueeze(0).to(device)
+        states, actions, rtgs, timesteps = context.update(obs, t)
         with torch.inference_mode():
-            out = model.get_action(states=ts, rtgs=tr, actions=ta, timesteps=tt, hx=None)
-        a = out[0] if isinstance(out, tuple) else out
-        a = a[0, 0, :] if a.ndim == 3 else a[0, :]
-        a = np.clip(a.detach().cpu().numpy().astype(np.float32), -1, 1)
+            out = model.get_action(states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, hx=None)
+        action = to_action(out)
         if kick_step <= t < kick_step + 3:
             env.apply_kick((0.0, float(force), 0.0))
-        obs, r, term, trunc, _ = env.step(a)
-        ha.append(a); ep_r.append(float(r)); rtg -= float(r)
+        obs, reward, terminated, truncated, _ = env.step(action)
+        context.record_action(action)
+        episode_return += float(reward)
+        context.consume_reward(float(reward))
         rolls.append(abs(torso_roll(obs)))
-        if term or trunc:
+        if terminated or truncated:
             break
     env.close()
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    rolls = np.asarray(rolls)
-    peak = float(rolls.max())
-    post = rolls[kick_step:]
-    osc = float(np.sqrt(np.mean((post - post.mean()) ** 2))) if len(post) > 1 else 0.0
+    roll_array = np.asarray(rolls)
+    peak = float(roll_array.max())
+    post = roll_array[kick_step:]
+    oscillation = float(np.sqrt(np.mean((post - post.mean()) ** 2))) if len(post) > 1 else 0.0
     return {"force": force, "seed": seed, "peak_roll_deg": round(peak, 2),
-            "post_roll_rms_deg": round(osc, 2), "return": round(float(np.sum(ep_r)), 1),
+            "post_roll_rms_deg": round(oscillation, 2), "return": round(episode_return, 1),
             "steps": len(rolls)}
 
 

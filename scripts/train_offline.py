@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 import numpy as np
 import torch
 
@@ -175,7 +176,7 @@ def main() -> None:
     if args.resume is not None:
         trainer.load_checkpoint(args.resume)
 
-    history = trainer.train()
+    trainer.train()
     logger.info(f"Training finished. Best Loss ({cfg.training.best_metric}): {trainer.best_loss:.4f}")
 
 

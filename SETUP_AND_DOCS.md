@@ -6,7 +6,7 @@ This document specifies the software architecture, execution environment, and do
 
 - **Hardware Platform**: NVIDIA GeForce RTX 4070 SUPER (12GB VRAM, Compute Capability 8.9 / Ada Lovelace).
 - **CUDA Toolkit**: CUDA 13.2 (`/usr/local/cuda-13.2`).
-- **Python Runtime**: Python 3.11.15 in local virtual environment (`/data/HDML_Model/.venv`).
+- **Python Runtime**: Python 3.11.15 in a local virtual environment (`.venv`).
 - **Core Dependencies**:
   - `torch==2.13.0+cu130`
   - `mamba-ssm==2.3.2.post1` (compiled via `--no-build-isolation` with native CUDA/Triton kernels)
@@ -40,7 +40,7 @@ The codebase implements the verified HDML architecture:
 
 ### Environment Activation
 ```bash
-source /data/HDML_Model/.venv/bin/activate
+source .venv/bin/activate
 ```
 
 ### Test Suite Execution
@@ -71,5 +71,6 @@ python scripts/measure_closed_loop.py \
 
 - [README.md](README.md): Main project overview, installation, and usage.
 - [REPRODUCIBILITY.md](REPRODUCIBILITY.md): Protocol for verifying and reproducing benchmark results.
+- [docs/ONNX_DEPLOYMENT.md](docs/ONNX_DEPLOYMENT.md): Production ONNX export reference, C#/C++/Python game engine runtime integration, and latency benchmarks.
 - [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md): Detailed rebuild log, architectural audit, and run artifacts.
 - [docs/AI_ASSISTANCE.md](docs/AI_ASSISTANCE.md): Disclosure of AI-assisted engineering and administrative tasks.

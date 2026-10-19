@@ -16,10 +16,8 @@ from pathlib import Path
 import time
 import numpy as np
 import torch
-import torch.nn as nn
 
 from hdml.models.foundation import HDMLFoundationModel
-from hdml.data.multi_embodiment_dataset import FastEmbodimentBuffer
 
 logger = logging.getLogger("BenchmarkFoundation")
 logger.setLevel(logging.INFO)
