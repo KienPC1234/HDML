@@ -27,7 +27,7 @@ class ModelConfig:
     visual_image_size: int = 64
     dropout: float = 0.1
     action_policy: str = "gaussian"  # "gaussian" (BC regressor) or "flow" (flow matching)
-    use_native_mamba3: bool = True  # use native mamba_ssm Mamba3 (else Mamba-1 + input-RoPE fallback)
+    use_native_mamba3: bool = True  # use native mamba_ssm Mamba3 on CUDA (else Portable Mamba-3 CPU fallback)
     mamba3_headdim: int = 64
     mamba3_ngroups: int = 1
     mamba3_rope_fraction: float = 0.5

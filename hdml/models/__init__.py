@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from hdml.models.fusion import CrossModalFusion, VisualPatchEncoder
-from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone, Mamba3Block
+from hdml.models.mamba3_native import Mamba3NativeBackbone, Mamba3NativeBlock
+from hdml.models.mamba3_portable import (
+    PortableMamba3,
+    PortableMamba3Block,
+    PortableMamba3Backbone,
+)
 from hdml.models.liquid_head import CfCActionFilter
 from hdml.models.flow_policy import FlowPolicy, FlowVelocityField, GaussianActionPolicy
 from hdml.models.hiqc_critic import HiQCCritic
@@ -27,8 +32,11 @@ __all__ = [
     "EmbodimentSpec",
     "CrossModalFusion",
     "VisualPatchEncoder",
-    "Mamba3CognitiveBackbone",
-    "Mamba3Block",
+    "Mamba3NativeBackbone",
+    "Mamba3NativeBlock",
+    "PortableMamba3Backbone",
+    "PortableMamba3Block",
+    "PortableMamba3",
     "CfCActionFilter",
     "FlowPolicy",
     "FlowVelocityField",

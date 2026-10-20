@@ -5,7 +5,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone, Mamba3Block, apply_rope
+from hdml.models.mamba3_native import Mamba3NativeBackbone, Mamba3NativeBlock
+from hdml.models.mamba3_portable import PortableMamba3Backbone, PortableMamba3Block
 from hdml.models.fusion import CrossModalFusion
 from hdml.models.liquid_head import CfCActionFilter
 from hdml.models.flow_policy import FlowPolicy
@@ -13,28 +14,49 @@ from hdml.models.hdml_model import HDMLModel
 from hdml.utils.config import ModelConfig
 
 
-def test_rope_and_mamba3_backbone() -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    x = torch.randn(2, 10, 128, device=device)
-    rope_x = apply_rope(x, dim=-1)
-    assert rope_x.shape == x.shape
+def test_mamba3_native_and_portable_backbone() -> None:
+    # 1. Portable Mamba-3 (CPU/CUDA)
+    x = torch.randn(2, 10, 128)
+    p_block = PortableMamba3Block(d_model=128, d_state=16, expand=2, headdim=64)
+    p_out = p_block(x)
+    assert p_out.shape == x.shape
 
-    block = Mamba3Block(d_model=128, d_state=16, d_conv=4, expand=2).to(device)
-    out = block(x)
-    assert out.shape == x.shape
-
-    backbone = Mamba3CognitiveBackbone(
+    p_backbone = PortableMamba3Backbone(
         d_model=128,
-        num_layers=3,
+        num_layers=2,
         d_state=16,
-        d_conv=4,
         expand=2,
         d_subgoal=64,
         prop_dim=17,
-    ).to(device)
-    subgoals, latent_features, values, s_pred = backbone(x)
+        headdim=64,
+    )
+    subgoals, latent_features, values, s_pred = p_backbone(x)
     assert subgoals.shape == (2, 10, 64)
     assert latent_features.shape == (2, 10, 128)
+    assert values.shape == (2, 10, 1)
+    assert s_pred.shape == (2, 10, 17)
+
+    # 2. Native Mamba-3 (CUDA)
+    if torch.cuda.is_available():
+        x_cuda = x.cuda()
+        n_block = Mamba3NativeBlock(d_model=128, d_state=16, expand=2, headdim=64).cuda()
+        n_out = n_block(x_cuda)
+        assert n_out.shape == x_cuda.shape
+
+        n_backbone = Mamba3NativeBackbone(
+            d_model=128,
+            num_layers=2,
+            d_state=16,
+            expand=2,
+            d_subgoal=64,
+            prop_dim=17,
+            headdim=64,
+        ).cuda()
+        subgoals, latent_features, values, s_pred = n_backbone(x_cuda)
+        assert subgoals.shape == (2, 10, 64)
+        assert latent_features.shape == (2, 10, 128)
+        assert values.shape == (2, 10, 1)
+        assert s_pred.shape == (2, 10, 17)
 
 
 def test_cross_modal_fusion() -> None:

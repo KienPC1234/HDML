@@ -172,15 +172,75 @@ def main() -> None:
     # The YAML may not describe the architecture the checkpoint was trained
     # with (e.g. configs/unitree_a1_default.yaml omits use_native_mamba3). The
     # state_dict is authoritative; override instead of failing load_state_dict.
-    inferred_native = infer_native_mamba3(ckpt["model_state_dict"])
-    if inferred_native is not None and inferred_native != cfg.model.use_native_mamba3:
-        logger.warning(
-            "Config says use_native_mamba3=%s but checkpoint keys indicate %s; "
-            "overriding for export.",
-            cfg.model.use_native_mamba3,
-            inferred_native,
+    sd = ckpt["model_state_dict"]
+    inferred_native = infer_native_mamba3(sd)
+    if inferred_native is False:
+        raise ValueError(
+            f"Checkpoint '{ckpt_path}' contains legacy Mamba-1 weights (conv1d, x_proj, A_log). "
+            f"Mamba-1 has been removed from this codebase in favor of Mamba-3. "
+            f"Please export a verified Mamba-3 checkpoint (e.g. checkpoints/rebuild_unitree/ or checkpoints/rebuild_long/)."
         )
-        cfg.model.use_native_mamba3 = inferred_native
+
+    if "fusion.prop_encoder.0.weight" in sd:
+        ckpt_prop_dim = sd["fusion.prop_encoder.0.weight"].shape[1]
+        if ckpt_prop_dim != cfg.model.prop_dim:
+            logger.warning("Overriding prop_dim %d -> %d from checkpoint", cfg.model.prop_dim, ckpt_prop_dim)
+            cfg.model.prop_dim = ckpt_prop_dim
+        ckpt_d_model = sd["fusion.prop_encoder.0.weight"].shape[0]
+        if ckpt_d_model != cfg.model.d_model:
+            logger.warning("Overriding d_model %d -> %d from checkpoint", cfg.model.d_model, ckpt_d_model)
+            cfg.model.d_model = ckpt_d_model
+
+    if "fusion.action_encoder.0.weight" in sd:
+        ckpt_action_dim = sd["fusion.action_encoder.0.weight"].shape[1]
+        if ckpt_action_dim != cfg.model.action_dim:
+            logger.warning("Overriding action_dim %d -> %d from checkpoint", cfg.model.action_dim, ckpt_action_dim)
+            cfg.model.action_dim = ckpt_action_dim
+
+    if "mamba_backbone.subgoal_head.2.weight" in sd:
+        ckpt_subgoal_dim = sd["mamba_backbone.subgoal_head.2.weight"].shape[0]
+        if ckpt_subgoal_dim != cfg.model.d_subgoal:
+            logger.warning("Overriding d_subgoal %d -> %d from checkpoint", cfg.model.d_subgoal, ckpt_subgoal_dim)
+            cfg.model.d_subgoal = ckpt_subgoal_dim
+
+    is_flow = "flow_policy.v_field.tau_embed.0.weight" in sd
+    ckpt_policy = "flow" if is_flow else "gaussian"
+    if ckpt_policy != cfg.model.action_policy:
+        logger.warning("Overriding action_policy %s -> %s from checkpoint", cfg.model.action_policy, ckpt_policy)
+        cfg.model.action_policy = ckpt_policy
+
+    if is_flow and "flow_policy.v_field.net.4.weight" in sd:
+        ckpt_chunk = sd["flow_policy.v_field.net.4.weight"].shape[0] // cfg.model.action_dim
+        if ckpt_chunk != cfg.model.chunk_size:
+            logger.warning("Overriding chunk_size %d -> %d from checkpoint", cfg.model.chunk_size, ckpt_chunk)
+            cfg.model.chunk_size = ckpt_chunk
+
+    mamba_layer_keys = [int(k.split(".")[2]) for k in sd if k.startswith("mamba_backbone.layers.") and ".norm.weight" in k]
+    if mamba_layer_keys:
+        ckpt_num_layers = max(mamba_layer_keys) + 1
+        if ckpt_num_layers != cfg.model.num_mamba_layers:
+            logger.warning("Overriding num_mamba_layers %d -> %d from checkpoint", cfg.model.num_mamba_layers, ckpt_num_layers)
+            cfg.model.num_mamba_layers = ckpt_num_layers
+
+    has_cfc = any(k.startswith("cfc_filter.") for k in sd)
+    if has_cfc != cfg.model.use_cfc:
+        logger.warning("Overriding use_cfc %s -> %s from checkpoint", cfg.model.use_cfc, has_cfc)
+        cfg.model.use_cfc = has_cfc
+    if has_cfc and "cfc_filter.cfc.rnn_cell.ff1.weight" in sd:
+        ckpt_cfc_u = sd["cfc_filter.cfc.rnn_cell.ff1.weight"].shape[0]
+        if ckpt_cfc_u != cfg.model.cfc_units:
+            logger.warning("Overriding cfc_units %d -> %d from checkpoint", cfg.model.cfc_units, ckpt_cfc_u)
+            cfg.model.cfc_units = ckpt_cfc_u
+    if has_cfc and "cfc_filter.cfc.rnn_cell.backbone.0.weight" in sd:
+        ckpt_cfc_bu = sd["cfc_filter.cfc.rnn_cell.backbone.0.weight"].shape[0]
+        if ckpt_cfc_bu != cfg.model.cfc_backbone_units:
+            logger.warning("Overriding cfc_backbone_units %d -> %d from checkpoint", cfg.model.cfc_backbone_units, ckpt_cfc_bu)
+            cfg.model.cfc_backbone_units = ckpt_cfc_bu
+
+    has_critic = any(k.startswith("hiqc_critic.") for k in sd)
+    if has_critic != cfg.model.use_critic:
+        logger.warning("Overriding use_critic %s -> %s from checkpoint", cfg.model.use_critic, has_critic)
+        cfg.model.use_critic = has_critic
 
     model = HDMLModel.from_config(cfg.model).cpu()
     model.load_state_dict(ckpt["model_state_dict"])
