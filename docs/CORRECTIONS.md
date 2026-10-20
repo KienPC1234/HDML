@@ -10,7 +10,7 @@ This is a software review record, not a competition report or a set of new exper
 4. Adapter evaluation records training loss separately from held-out prediction loss, before and after fitting. Seen or unverified pretraining exposure requires explicit opt-in and is labeled. It does not claim closed-loop success or few-shot sample efficiency.
 5. Every shared foundation parameter is frozen during adapter fitting. CUDA autocast and synchronization are conditional on the selected device.
 6. Comparative benchmark aborts on missing checkpoints and missing HDML normalization; GPU timing synchronizes on both boundaries. Output JSON retains raw episode returns and checkpoint hashes. Completion replaces the misleading survival label.
-7. Windowed rollout passes fresh recurrent state instead of replaying overlapping history with a prior final state. Unsupported dual-rate inference raises a descriptive error.
+7. Windowed rollout passes fresh recurrent state instead of replaying overlapping history with a prior final state. (Superseded on 20 October 2026: the evaluated subgoal-hold path now carries `next_hx` across control steps and resets at episode start. The Mamba window still replays the context, while the CfC advances one token only. See `docs/OPERATIONAL_FIXES_2026-10-20.md`.)
 8. Model documentation describes the actual Mamba-1/RoPE/output-gate computation. Unused standalone flow/critic/value modules are excluded from optimization, while their parameter names remain for old checkpoint loading.
 9. Standalone training no longer regularizes a dimension-mismatched subgoal toward zero. The first-difference smoothness penalty is described as such, rather than second-order Grad-CAPS. This change requires retraining before claiming comparable results.
 10. Baseline and HDML training defaults align on stride 1, and explicit training seed options support independently executed runs. A baseline checkpoint named best is now copied from the checkpoint selected on validation, not overwritten by the final epoch.
@@ -35,3 +35,11 @@ Existing `results/*.txt`, plots, videos, the preprint, DOI record, and v1.0.0 we
 - Comparative benchmark now rejects a missing requested config/checkpoint without silently loading v4 artifacts. It honors the requested torch device and fails if CUDA was requested but unavailable.
 - Foundation latency helper synchronizes the selected device immediately before measurement.
 - These changes are source-reviewed and syntax-checked only, pending GPU execution.
+
+## 20 October continuation
+
+- PACE schedules the forward-dynamics prediction at its trained horizon `t + chunk_size`, distinguishes deviation from plan expiry, and records absolute trigger steps. It no longer turns a multi-step macro plan into per-step backbone calls.
+- CfC rollout carries `next_hx` and resets at episode start. The old multi-step `hx` guard was removed because the backbone context is not replayed through the CfC. A real-checkpoint check shows full-sequence and stepwise states agree within `1.2e-7`.
+- CUDA graph inference copies real timesteps before replay and captures exact-length graphs `1..context_length`; zero padding is no longer used for short windows.
+- Unitree action is documented as a target joint angle for a position servo, not direct torque. The jerk metric is a command-smoothness proxy.
+- Evidence: `results/fix_pace_cfc_cudagraph/` and `docs/OPERATIONAL_FIXES_2026-10-20.md`. Existing benchmark numbers were not regenerated.

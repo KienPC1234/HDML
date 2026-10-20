@@ -53,6 +53,7 @@ python scripts/benchmark_unitree_a1.py
 
 - [SETUP_AND_DOCS.md](SETUP_AND_DOCS.md): Full installation, hardware setup, and reproducible benchmarks.
 - [docs/ONNX_DEPLOYMENT.md](docs/ONNX_DEPLOYMENT.md): ONNX export pipeline, C# Unity Sentis integration, and C++ game engine runtime.
+- [docs/OPERATIONAL_FIXES_2026-10-20.md](docs/OPERATIONAL_FIXES_2026-10-20.md): PACE/CfC/CUDA-graph execution semantics and re-run evidence.
 
 ## License
 

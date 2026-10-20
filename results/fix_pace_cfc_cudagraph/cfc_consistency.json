@@ -1,0 +1,26 @@
+{
+  "created_utc": "2026-10-20T13:46:01.934828+00:00",
+  "git_commit": "e2402be10f754337542e721d7c39099a4bbc36cb",
+  "config": "configs/unitree_a1_cfc_strong.yaml",
+  "checkpoint": "checkpoints/rebuild_unitree/unitree_a1/best_model.pt",
+  "checkpoint_current_step": 6513,
+  "dataset": "data/unitree_a1_trajectories.npz",
+  "device": "cuda",
+  "cfc_residual": 0.5,
+  "mode": "full-sequence CfC (training path) vs token-by-token carried hx (rollout path)",
+  "context_length": 20,
+  "windows": 32,
+  "tolerance": 1e-05,
+  "full_vs_stepwise_max_abs_diff": 1.1920928955078125e-07,
+  "final_hx_max_abs_diff": 0.0,
+  "passed": true,
+  "get_action_with_carried_hx": {
+    "carry_vs_reset_max_abs_diff": 0.1918054223060608,
+    "reset_is_deterministic_max_abs_diff": 0.0,
+    "next_hx_finite": true
+  },
+  "time_step": "ncps CfC default timespans=1.0 (normalized unit), unchanged",
+  "cfc_input": "Mamba latent (d_model), not the raw sensor vector",
+  "requires_retraining": false,
+  "note": "Training resets hx at each sampled context window; rollout resets at episode start and then carries next_hx across control steps."
+}

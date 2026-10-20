@@ -1,0 +1,135 @@
+{
+  "created_utc": "2026-10-20T13:46:02.689983+00:00",
+  "git_commit": "e2402be10f754337542e721d7c39099a4bbc36cb",
+  "config": "configs/unitree_a1_cfc_strong.yaml",
+  "checkpoint": "checkpoints/rebuild_unitree/unitree_a1/best_model.pt",
+  "checkpoint_current_step": 6513,
+  "chunk_size": 5,
+  "macro_interval": 10,
+  "mode": "subgoal-hold micro tier; chunk_size is the flow action-chunk length, macro_interval is the subgoal lifetime",
+  "max_steps": 40,
+  "scenarios": {
+    "no_pace": {
+      "macro_backbone_calls": 4,
+      "micro_action_calls": 36,
+      "per_step_backbone": false,
+      "episode_length": 40,
+      "pace": {
+        "threshold": null,
+        "deviation_triggers": 0,
+        "expiry_triggers": 0,
+        "total_triggers": 0,
+        "events": []
+      }
+    },
+    "pace_expiry_only": {
+      "macro_backbone_calls": 4,
+      "micro_action_calls": 36,
+      "per_step_backbone": false,
+      "episode_length": 40,
+      "pace": {
+        "threshold": 1000000000.0,
+        "deviation_triggers": 0,
+        "expiry_triggers": 3,
+        "total_triggers": 3,
+        "events": [
+          {
+            "step": 10,
+            "reason": "expired",
+            "deviation": null,
+            "threshold": 1000000000.0,
+            "plan_start_step": 0,
+            "horizon": 10
+          },
+          {
+            "step": 20,
+            "reason": "expired",
+            "deviation": null,
+            "threshold": 1000000000.0,
+            "plan_start_step": 10,
+            "horizon": 10
+          },
+          {
+            "step": 30,
+            "reason": "expired",
+            "deviation": null,
+            "threshold": 1000000000.0,
+            "plan_start_step": 20,
+            "horizon": 10
+          }
+        ]
+      }
+    },
+    "pace_frequent_deviation": {
+      "macro_backbone_calls": 8,
+      "micro_action_calls": 32,
+      "per_step_backbone": false,
+      "episode_length": 40,
+      "pace": {
+        "threshold": 0.0,
+        "deviation_triggers": 7,
+        "expiry_triggers": 0,
+        "total_triggers": 7,
+        "events": [
+          {
+            "step": 5,
+            "reason": "deviation",
+            "deviation": 5.343079090118408,
+            "threshold": 0.0,
+            "plan_start_step": 0,
+            "horizon": 10
+          },
+          {
+            "step": 10,
+            "reason": "deviation",
+            "deviation": 5.170496940612793,
+            "threshold": 0.0,
+            "plan_start_step": 5,
+            "horizon": 10
+          },
+          {
+            "step": 15,
+            "reason": "deviation",
+            "deviation": 5.88684606552124,
+            "threshold": 0.0,
+            "plan_start_step": 10,
+            "horizon": 10
+          },
+          {
+            "step": 20,
+            "reason": "deviation",
+            "deviation": 5.911628723144531,
+            "threshold": 0.0,
+            "plan_start_step": 15,
+            "horizon": 10
+          },
+          {
+            "step": 25,
+            "reason": "deviation",
+            "deviation": 6.3054118156433105,
+            "threshold": 0.0,
+            "plan_start_step": 20,
+            "horizon": 10
+          },
+          {
+            "step": 30,
+            "reason": "deviation",
+            "deviation": 6.4594011306762695,
+            "threshold": 0.0,
+            "plan_start_step": 25,
+            "horizon": 10
+          },
+          {
+            "step": 35,
+            "reason": "deviation",
+            "deviation": 6.062091827392578,
+            "threshold": 0.0,
+            "plan_start_step": 30,
+            "horizon": 10
+          }
+        ]
+      }
+    }
+  },
+  "note": "macro_backbone_calls counts HDMLModel.get_action calls; micro_action_calls counts act_from_subgoal calls. Return values are not benchmark evidence."
+}
