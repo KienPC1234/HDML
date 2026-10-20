@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Real Unitree A1 actuation-waveform figure: HDML vs Decision Transformer.
+"""Real Unitree A1 command-waveform figure: HDML vs Decision Transformer.
 
-Panel (a): Instantaneous torque chatter J_t = (1/12) sum_j |Delta^2 a_{t,j}| over a focused gait window (t in [3.0, 4.4] s),
-           showing sharp spiky chatter in Decision Transformer vs smoothly damped profile in HDML.
-Panel (b): Cumulative mechanical jerk over the full 1000-step episode (20 seconds),
-           showing that Decision Transformer steadily accumulates severe mechanical fatigue (73.2)
-           while HDML reduces accumulated jerk by 14.3% (62.6).
+The Unitree environments map the policy action to a target joint angle for a
+position servo, not to a direct motor torque. The plotted quantity is therefore
+joint-target command chatter, not measured torque.
+
+Panel (a): Instantaneous command chatter J_t = (1/12) sum_j |Delta^2 a_{t,j}|
+           over a focused gait window (t in [3.0, 4.4] s).
+Panel (b): Cumulative command jerk over the full 1000-step episode,
+           showing that Decision Transformer steadily accumulates a higher
+           score (73.2) while HDML reduces it by 14.3% (62.6).
 Styled with Seaborn whitegrid, modern publication palette, zero collisions.
 """
 from __future__ import annotations

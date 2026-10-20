@@ -84,11 +84,18 @@ class HDMLEvaluator:
         ep_rewards: list[float] = []
 
         target_rtg = self.target_return
-        cfc_hx = None
+        # CfC state is carried across control steps and reset only when a new
+        # episode starts, matching the step-by-step application of the same
+        # recurrence used on full sequences during training.
+        cfc_hx: torch.Tensor | None = None
         current_subgoal: torch.Tensor | None = None
         current_latent: torch.Tensor | None = None
         if pace_controller is not None:
             pace_controller.reset()
+            if macro_interval == 1:
+                logger.info(
+                    "PACE monitor inactive: macro_interval=1 already replans every step"
+                )
 
         for t in range(max_steps):
             raw_obs = np.asarray(obs, dtype=np.float32)
@@ -150,12 +157,31 @@ class HDMLEvaluator:
         total_return = float(sum(ep_rewards))
         smoothness = compute_action_smoothness(actions_arr)
         rate_of_change = compute_action_rate_of_change(actions_arr)
+        pace_stats = (
+            pace_controller.statistics()
+            if pace_controller is not None
+            else {
+                "threshold": None,
+                "deviation_triggers": 0,
+                "expiry_triggers": 0,
+                "total_triggers": 0,
+                "events": [],
+            }
+        )
+        if pace_stats["total_triggers"] > 0:
+            logger.info(
+                "PACE episode summary: %d deviation trigger(s), %d expiry trigger(s); steps=%s",
+                pace_stats["deviation_triggers"],
+                pace_stats["expiry_triggers"],
+                [event["step"] for event in pace_stats["events"]],
+            )
 
         return {
             "episode_return": total_return,
             "episode_length": len(ep_rewards),
             "action_smoothness": smoothness,
             "action_rate_of_change": rate_of_change,
+            "pace": pace_stats,
         }
 
     def _context_tensors(
@@ -194,10 +220,21 @@ class HDMLEvaluator:
         current_latent: torch.Tensor | None,
         pace_controller: PACEController | None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-        """Run a macro replan or fast micro- actuation and return the action tensor."""
+        """Run a macro replan or fast micro-actuation and return the action tensor.
+
+        Control mode is explicitly subgoal-hold: the macro tier freezes a
+        subgoal every ``macro_interval`` control steps and the micro tier
+        regenerates an action every step through :meth:`act_from_subgoal`.
+        The flow action chunk is therefore not executed action-by-action.
+        """
         needs_replanning = False
+        # With macro_interval=1 the backbone is already scheduled every step;
+        # there is no held subgoal for PACE to protect. PACE monitoring is only
+        # meaningful when a macro plan spans more than one control step.
         if pace_controller is not None and macro_interval > 1 and current_subgoal is not None:
-            _, needs_replanning = pace_controller.get_next_action(t_prop_current.squeeze(0))
+            needs_replanning, _reason, _deviation = pace_controller.should_replan(
+                t_prop_current.squeeze(0), current_step=t
+            )
 
         if t % macro_interval == 0 or current_subgoal is None or needs_replanning:
             with torch.inference_mode():
@@ -206,19 +243,32 @@ class HDMLEvaluator:
                     rtgs=t_rtgs,
                     actions=t_actions,
                     timesteps=t_timesteps,
-                    hx=None,
+                    hx=cfc_hx,
                 )
                 current_subgoal = info["subgoal"]
                 current_latent = info.get("latent")
                 if pace_controller is not None and macro_interval > 1:
-                    # Feed action / predicted states to PACE for chunk deviation tracking
+                    # The dynamics head predicts s_{t+chunk_size}; schedule the
+                    # comparison at that exact absolute step, not at t+1.
+                    predicted = info.get("next_state")
+                    chunk = info.get("chunk")
+                    due_step = t + int(getattr(self.model, "chunk_size", 1))
                     pace_controller.set_new_plan(
-                        action_chunk=action_tensor.squeeze(0).unsqueeze(0),
-                        predicted_states=None,
+                        action_chunk=chunk[0] if chunk is not None else None,
+                        predicted_states=(
+                            predicted.squeeze(0).unsqueeze(0)
+                            if predicted is not None
+                            else None
+                        ),
+                        prediction_due_steps=[due_step],
+                        horizon=macro_interval,
+                        current_step=t,
                     )
             return action_tensor, cfc_hx, current_subgoal, current_latent
 
         # Fast Micro-Actuation: flow sampling + CfC filter using the last subgoal and latent.
+        # The CfC hidden state is carried so the filter advances exactly one
+        # token per control step instead of restarting from zero.
         assert current_subgoal is not None
         t_rtg_current = torch.tensor([[scaled_rtg]], dtype=torch.float32, device=self.device)
         with torch.inference_mode():
@@ -226,7 +276,7 @@ class HDMLEvaluator:
                 subgoal=current_subgoal,
                 current_prop=t_prop_current,
                 rtg=t_rtg_current,
-                hx=None,
+                hx=cfc_hx,
                 latent=current_latent,
             )
         return action_tensor, cfc_hx, current_subgoal, current_latent
@@ -247,7 +297,7 @@ class HDMLEvaluator:
         macro_interval: int = 1,
         seed: int = 42,
         pace_controller: PACEController | None = None,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Evaluate HDML agent across multiple benchmark episodes.
 
         Args:
@@ -272,6 +322,9 @@ class HDMLEvaluator:
         lengths: list[int] = []
         smoothnesses: list[float] = []
         rates_of_change: list[float] = []
+        pace_deviation_triggers: list[int] = []
+        pace_expiry_triggers: list[int] = []
+        pace_events: list[dict[str, Any]] = []
 
         logger.info(
             f"Evaluating HDML on {self.env_name} for {num_episodes} episodes "
@@ -291,6 +344,12 @@ class HDMLEvaluator:
             lengths.append(ep_result["episode_length"])
             smoothnesses.append(ep_result["action_smoothness"])
             rates_of_change.append(ep_result["action_rate_of_change"])
+            pac = ep_result.get("pace", {})
+            pace_deviation_triggers.append(int(pac.get("deviation_triggers", 0)))
+            pace_expiry_triggers.append(int(pac.get("expiry_triggers", 0)))
+            pace_events.extend(
+                {**event, "episode": ep} for event in pac.get("events", [])
+            )
 
         env.close()
 
@@ -304,6 +363,9 @@ class HDMLEvaluator:
             "std_length": float(np.std(lengths)),
             "mean_smoothness": float(np.mean(smoothnesses)),
             "mean_rate_of_change": float(np.mean(rates_of_change)),
+            "pace_deviation_triggers": float(np.mean(pace_deviation_triggers)),
+            "pace_expiry_triggers": float(np.mean(pace_expiry_triggers)),
+            "pace_events": pace_events,
         }
 
         logger.info(

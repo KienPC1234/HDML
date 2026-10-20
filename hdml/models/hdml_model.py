@@ -353,22 +353,49 @@ class HDMLModel(nn.Module):
         visual_frames: torch.Tensor | None = None,
         hx: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, dict[str, torch.Tensor]]:
-        """Step inference for closed-loop rollouts; returns the last-step action."""
-        if states.shape[1] > 1 and hx is not None:
-            raise ValueError("Overlapping context must use hx=None; otherwise history is replayed twice")
-        subgoals_pred, latent_features, values_pred, next_states_pred, _, actions_pred, next_hx = self.encode(
+        """Step inference for closed-loop rollouts; returns the last-step action.
+
+        The Mamba backbone always consumes the full causal context window. The
+        CfC action filter advances by exactly one token: the last position of
+        that window. Passing ``hx`` therefore continues the filter state across
+        control steps without replaying the whole window through the CfC at
+        the same time. Pass ``hx=None`` to start from the CfC zero state (for
+        example at the first step of an episode).
+
+        ``info["next_state"]`` is the forward-dynamics prediction ``s_{t+k}``
+        with ``k = chunk_size``; callers must schedule it for that later step.
+
+        Returns:
+            action: ``(B, action_dim)``
+            next_hx: ``(B, cfc_units)`` or ``None`` when CfC is disabled
+            info: subgoal, latent, action, next_state, and the sampled action
+                chunk for the last context position.
+        """
+        (
+            subgoals_pred,
+            latent_features,
+            values_pred,
+            next_states_pred,
+            _,
+            actions_pred,
+            next_hx,
+            chunk,
+        ) = self.encode_with_chunk(
             states=states, rtgs=rtgs, actions=actions, timesteps=timesteps,
             visual_frames=visual_frames, hx=hx, action_last_only=True,
         )
         assert actions_pred is not None, "encode(with_action=True) must return actions"
         last_action = actions_pred[:, -1, :]
         last_subgoal = subgoals_pred[:, -1, :]
-        return last_action, next_hx, {
+        info: dict[str, torch.Tensor] = {
             "subgoal": last_subgoal,
             "latent": latent_features[:, -1, :],
             "action": last_action,
             "next_state": next_states_pred[:, -1, :],
         }
+        if chunk is not None:
+            info["chunk"] = chunk[:, -1]
+        return last_action, next_hx, info
 
     @torch.inference_mode()
     def act_from_subgoal(

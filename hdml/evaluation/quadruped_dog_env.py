@@ -29,7 +29,9 @@ class QuadrupedDogEnv(gym.Env):
         self.max_episode_steps = max_episode_steps
         self.step_count = 0
 
-        # Action space: 12 motor torques in [-1, 1]
+        # Action space: 12 normalized joint-position commands in [-1, 1].
+        # ``step`` maps them to target joint angles for MuJoCo's position servos
+        # (``data.ctrl``); they are not direct motor torques.
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(12,), dtype=np.float32)
 
         # Observation space: 35-dim continuous kinematic state
