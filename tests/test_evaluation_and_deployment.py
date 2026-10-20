@@ -329,13 +329,17 @@ def test_cuda_graph_matches_eager_for_short_windows_and_real_timesteps() -> None
     assert np.allclose(runner.get_hx(), 0.0)
 
     # Distinct absolute timesteps must change the output and still match eager.
+    # Both sides start from the same non-zero CfC state, so this comparison
+    # isolates the timestep change instead of mixing in carried-state drift.
+    assert runner.cfc_state_size is not None
+    hx0 = torch.randn(1, runner.cfc_state_size, device="cuda")
     states = rng.normal(size=(4, 8)).astype(np.float32)
     actions = rng.normal(size=(4, 3)).astype(np.float32)
     rtgs = np.zeros((4, 1), np.float32)
     timesteps_a = np.arange(4, dtype=np.int64)
     timesteps_b = (1000 + np.arange(4)).astype(np.int64)
-    graph_a = runner(states, rtgs, actions, timesteps_a)
-    graph_b = runner(states, rtgs, actions, timesteps_b)
+    graph_a = runner(states, rtgs, actions, timesteps_a, hx=hx0)
+    graph_b = runner(states, rtgs, actions, timesteps_b, hx=hx0)
     assert not np.allclose(graph_a, graph_b), "runner ignored the supplied timesteps"
 
     for timesteps in (timesteps_a, timesteps_b):
@@ -345,8 +349,8 @@ def test_cuda_graph_matches_eager_for_short_windows_and_real_timesteps() -> None
                 rtgs=torch.from_numpy(rtgs).unsqueeze(0).cuda(),
                 actions=torch.from_numpy(actions).unsqueeze(0).cuda(),
                 timesteps=torch.from_numpy(timesteps).unsqueeze(0).cuda(),
-                hx=None,
+                hx=hx0,
             )
-        graph = runner(states, rtgs, actions, timesteps)
+        graph = runner(states, rtgs, actions, timesteps, hx=hx0)
         np.testing.assert_allclose(graph, eager[0].cpu().numpy(), atol=1e-5, rtol=1e-5)
 

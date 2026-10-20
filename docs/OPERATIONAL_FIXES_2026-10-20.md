@@ -266,7 +266,9 @@ CUDA graph (`tests/test_evaluation_and_deployment.py`):
 - graph equals eager for short windows (1, 2, 4, 6 steps) with no padding;
 - graph equals eager for both action and `next_hx` when CfC state is carried;
 - `reset()` returns the state to zero and repeated resets are deterministic;
-- changing timesteps changes the output and still matches eager.
+- changing timesteps changes the output and still matches eager; this check gives
+  both sides the same non-zero starting `hx`, so it isolates the timestep change
+  instead of mixing it with carried-state drift.
 
 Verification run:
 
