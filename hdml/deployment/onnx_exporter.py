@@ -4,81 +4,12 @@ import copy
 import logging
 from pathlib import Path
 from typing import Any, cast
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from hdml.models.mamba3_backbone import Mamba3Block
 
 logger = logging.getLogger(__name__)
-
-
-class PurePyTorchMamba(nn.Module):
-    """Pure PyTorch portable implementation of Mamba SSM block for ONNX & CPU execution."""
-
-    def __init__(self, mamba_module: nn.Module) -> None:
-        super().__init__()
-        m = cast(Any, mamba_module)
-        self.d_model = m.d_model
-        self.d_state = m.d_state
-        self.d_conv = m.d_conv
-        self.expand = m.expand
-        self.d_inner = m.d_inner
-        self.dt_rank = m.dt_rank
-
-        self.in_proj = copy.deepcopy(m.in_proj).to("cpu")
-        self.conv1d = nn.Conv1d(
-            in_channels=self.d_inner,
-            out_channels=self.d_inner,
-            bias=m.conv1d.bias is not None,
-            kernel_size=self.d_conv,
-            groups=self.d_inner,
-            padding=self.d_conv - 1,
-        ).to("cpu")
-        self.conv1d.weight.data.copy_(m.conv1d.weight.data.to("cpu"))
-        src_bias = m.conv1d.bias
-        if src_bias is not None:
-            dst_bias = self.conv1d.bias
-            assert dst_bias is not None
-            dst_bias.data.copy_(src_bias.data.to("cpu"))
-
-        self.x_proj = copy.deepcopy(m.x_proj).to("cpu")
-        self.dt_proj = copy.deepcopy(m.dt_proj).to("cpu")
-        self.out_proj = copy.deepcopy(m.out_proj).to("cpu")
-        self.A_log = nn.Parameter(m.A_log.data.clone().to("cpu"))
-        self.D = nn.Parameter(m.D.data.clone().to("cpu"))
-
-    def forward(self, u: torch.Tensor) -> torch.Tensor:
-        batch, seqlen, _ = u.shape
-        xz = self.in_proj(u)
-        x, z = xz.chunk(2, dim=-1)
-
-        x_conv = self.conv1d(x.transpose(1, 2))[:, :, :seqlen].transpose(1, 2)
-        x_act = F.silu(x_conv)
-
-        x_dbl = self.x_proj(x_act)
-        dt, B_ssm, C_ssm = torch.split(x_dbl, [self.dt_rank, self.d_state, self.d_state], dim=-1)
-        dt = F.softplus(self.dt_proj(dt))
-
-        A = -torch.exp(self.A_log.float())
-        D = self.D.float()
-
-        y_list = []
-        h = torch.zeros(batch, self.d_inner, self.d_state, device=u.device, dtype=u.dtype)
-        for t in range(seqlen):
-            dt_t = dt[:, t, :, None]
-            dA_t = torch.exp(dt_t * A[None, :, :])
-            dB_t = dt_t * B_ssm[:, t, None, :]
-            x_t = x_act[:, t, :, None]
-            h = h * dA_t + dB_t * x_t
-            y_t = (h * C_ssm[:, t, None, :]).sum(dim=-1) + x_act[:, t, :] * D[None, :]
-            y_list.append(y_t)
-
-        y = torch.stack(y_list, dim=1)
-        y = y * F.silu(z)
-        out = self.out_proj(y)
-        return out
 
 
 class HDMLDeploymentWrapper(nn.Module):
@@ -126,10 +57,7 @@ class HDMLDeploymentWrapper(nn.Module):
             from hdml.models.mamba3_native import Mamba3NativeBlock
             from hdml.models.mamba3_portable import PortableMamba3
             for block in model_any.mamba_backbone.layers:
-                if isinstance(block, Mamba3Block) and hasattr(block, "mamba"):
-                    if not isinstance(block.mamba, PurePyTorchMamba):
-                        block.mamba = PurePyTorchMamba(block.mamba)
-                elif isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
+                if isinstance(block, Mamba3NativeBlock) and hasattr(block, "mamba"):
                     if isinstance(block.mamba, PortableMamba3):
                         continue
                     nat = block.mamba
@@ -227,6 +155,21 @@ def export_hdml_to_onnx(
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
+    if hasattr(model, "prop_dim") and model.prop_dim != prop_dim:
+        logger.warning(
+            "export_hdml_to_onnx: argument prop_dim=%d != model.prop_dim=%d; using model.prop_dim",
+            prop_dim,
+            model.prop_dim,
+        )
+        prop_dim = model.prop_dim
+    if hasattr(model, "action_dim") and model.action_dim != action_dim:
+        logger.warning(
+            "export_hdml_to_onnx: argument action_dim=%d != model.action_dim=%d; using model.action_dim",
+            action_dim,
+            model.action_dim,
+        )
+        action_dim = model.action_dim
+
     wrapper = HDMLDeploymentWrapper(
         model, action_only=action_only, state_mean=state_mean, state_std=state_std
     ).eval()
@@ -261,18 +204,20 @@ def export_hdml_to_onnx(
 
     logger.info(f"Exporting HDML model to ONNX: {out_file} (opset={opset_version}, action_only={action_only})...")
 
-    torch.onnx.export(
-        wrapper,
-        (dummy_states, dummy_rtgs, dummy_actions, dummy_timesteps),
-        str(out_file),
-        dynamo=False,
-        export_params=True,
-        opset_version=opset_version,
-        do_constant_folding=True,
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes=dynamic_axes,
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        torch.onnx.export(
+            wrapper,
+            (dummy_states, dummy_rtgs, dummy_actions, dummy_timesteps),
+            str(out_file),
+            dynamo=False,
+            export_params=True,
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes=dynamic_axes,
+        )
 
     file_size_mb = out_file.stat().st_size / (1024 * 1024)
     logger.info(f"ONNX model saved successfully: {out_file} ({file_size_mb:.2f} MB)")

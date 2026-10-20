@@ -31,7 +31,7 @@ The codebase implements the verified HDML architecture:
 | **Model Parameters** | 1,396,240 (~1.40M) | Decision Transformer: 1.21M, Decision RNN: 1.01M |
 | **Pure GPU Inference** | 8.14 ms (122.9 Hz) | Forward pass on context length $T=20$ |
 | **Closed-Loop Cycle** | 9.02 ms (110.8 Hz) | Includes sensor read, normalisation, inference, and physics step |
-| **Portable CPU Inference** | 11.22 ms (89.1 Hz) | Portable Mamba-1/RoPE architecture on CPU |
+| **Portable CPU Inference** | 11.22 ms (89.1 Hz) | Portable pure-PyTorch Mamba-3 architecture on CPU |
 | **Normalized IQM** | 65.99 [7.81, 101.14] | Outperforms Decision RNN (45.27); DT: 95.60 [25.36, 107.79] |
 | **Mechanical Jerk** | 0.5724 | Lowest among sequence models (29.4% lower than DT's 0.8109) |
 | **Perturbed IQM** | 10.24 [8.44, 13.72] | 8.7x retention over DT (1.17); 100% completion rate |

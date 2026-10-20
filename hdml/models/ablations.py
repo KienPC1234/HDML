@@ -5,7 +5,8 @@ import torch.nn as nn
 from ncps.torch import CfC
 
 from hdml.models.fusion import CrossModalFusion
-from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
+from hdml.models.mamba3_native import Mamba3NativeBackbone
+from hdml.models.mamba3_portable import PortableMamba3Backbone
 
 
 class _CfCLiquidHead(nn.Module):
@@ -97,7 +98,7 @@ class _CfCLiquidHead(nn.Module):
 
 
 class MambaMLPHeadAblation(nn.Module):
-    """Ablation Variant A: Mamba-1/RoPE Backbone + Standard MLP Action Head.
+    """Ablation Variant A: Mamba-3 Backbone + Standard MLP Action Head.
 
     Isolates the Mamba backbone without the Liquid/CfC filter. Used in ablation studies
     to show that mechanical jerk reduction is driven by the liquid ODE filter, not the
@@ -127,15 +128,34 @@ class MambaMLPHeadAblation(nn.Module):
             dropout=dropout,
         )
 
-        self.backbone = Mamba3CognitiveBackbone(
-            d_model=d_model,
-            d_state=d_state,
-            d_conv=d_conv,
-            expand=expand,
-            num_layers=num_mamba_layers,
-            d_subgoal=d_model,
-            prop_dim=prop_dim,
-        )
+        d_inner = int(expand * d_model)
+        headdim = 64
+        if d_inner % headdim != 0:
+            for cand in (32, 16, 8, 4):
+                if d_inner % cand == 0:
+                    headdim = cand
+                    break
+
+        if torch.cuda.is_available():
+            self.backbone: nn.Module = Mamba3NativeBackbone(
+                d_model=d_model,
+                d_state=d_state,
+                expand=expand,
+                num_layers=num_mamba_layers,
+                d_subgoal=d_model,
+                prop_dim=prop_dim,
+                headdim=headdim,
+            )
+        else:
+            self.backbone = PortableMamba3Backbone(
+                d_model=d_model,
+                d_state=d_state,
+                expand=expand,
+                num_layers=num_mamba_layers,
+                d_subgoal=d_model,
+                prop_dim=prop_dim,
+                headdim=headdim,
+            )
 
         self.mlp_head = nn.Sequential(
             nn.Linear(d_model, d_model),

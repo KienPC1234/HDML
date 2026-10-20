@@ -6,8 +6,8 @@ from typing import Any, cast
 import torch
 import torch.nn as nn
 from hdml.models.fusion import CrossModalFusion
-from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
 from hdml.models.mamba3_native import Mamba3NativeBackbone
+from hdml.models.mamba3_portable import PortableMamba3Backbone
 from hdml.models.liquid_head import CfCActionFilter
 from hdml.models.flow_policy import FlowPolicy, GaussianActionPolicy
 from hdml.models.hiqc_critic import HiQCCritic
@@ -18,8 +18,8 @@ class HDMLModel(nn.Module):
     """Hierarchical Decision Mamba-Liquid policy.
 
     Backbone: a native Mamba-3 selective SSM (built-in rotary state-space
-    embedding, trapezoidal discretisation) when ``use_native_mamba3`` is true;
-    the legacy Mamba-1 + input-RoPE block is kept for old checkpoints.
+    embedding, trapezoidal discretisation) when CUDA is available;
+    falls back to Portable Mamba-3 (pure PyTorch) on CPU/ONNX.
 
     Policy: Flow Matching over an action chunk (``flow_policy``). At every step
     the flow field is integrated from a deterministic prior to a local action
@@ -83,12 +83,10 @@ class HDMLModel(nn.Module):
             dropout=dropout,
         )
 
-        # 2. Selective SSM backbone (native Mamba-3 by default).
-        #    Native Mamba-3 uses fused CUDA/Triton kernels; fall back to the
-        #    legacy Mamba-1+RoPE block on CPU-only hosts.
+        # 2. Selective SSM backbone (native Mamba-3 on GPU, pure PyTorch Portable Mamba-3 on CPU).
         if use_native_mamba3 and not torch.cuda.is_available():
             logging.getLogger(__name__).warning(
-                "CUDA unavailable: falling back to legacy Mamba-1 backbone."
+                "CUDA unavailable: falling back to Portable Mamba-3 (pure PyTorch) backbone."
             )
             use_native_mamba3 = False
         self.use_native_mamba3 = use_native_mamba3
@@ -107,14 +105,15 @@ class HDMLModel(nn.Module):
                 chunk_size=mamba3_chunk,
             )
         else:
-            self.mamba_backbone = Mamba3CognitiveBackbone(
+            self.mamba_backbone = PortableMamba3Backbone(
                 d_model=d_model,
                 d_state=d_state,
-                d_conv=d_conv,
                 expand=expand,
                 num_layers=num_mamba_layers,
                 d_subgoal=self.d_subgoal,
                 prop_dim=prop_dim,
+                headdim=mamba3_headdim,
+                rope_fraction=mamba3_rope_fraction,
             )
 
         # 3. Generative Flow-Matching action-chunk policy and optional HiQC critic.

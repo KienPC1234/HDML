@@ -1,7 +1,7 @@
 """HDML-Foundation: Universal Multi-Embodiment Sequence-to-Action Backbone.
 
-Combines gated Mamba-1 blocks with input RoPE with continuous-time
-Liquid Neural Networks (CfC ODE) for multi-robot pre-training and fast adaptation.
+Combines Mamba-3 blocks with continuous-time Liquid Neural Networks
+(CfC ODE) for multi-robot pre-training and fast adaptation.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from typing import cast
 import torch
 import torch.nn as nn
 
-from hdml.models.mamba3_backbone import Mamba3CognitiveBackbone
 from hdml.models.mamba3_native import Mamba3NativeBackbone
+from hdml.models.mamba3_portable import PortableMamba3Backbone
 from ncps.torch import CfC
 
 
@@ -144,13 +144,13 @@ class HDMLFoundationModel(nn.Module):
                 prop_dim=d_model,
             )
         else:
-            self.mamba_backbone = Mamba3CognitiveBackbone(
+            self.mamba_backbone = PortableMamba3Backbone(
                 d_model=d_model,
                 num_layers=num_mamba_layers,
                 d_state=d_state,
-                d_conv=d_conv,
                 expand=expand,
                 d_subgoal=64,
+                prop_dim=d_model,
             )
 
         # 3. Universal Continuous-Time Liquid CfC ODE Filter

@@ -124,7 +124,7 @@ def main() -> None:
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # --- 3. Portable CPU deployment path (Mamba-1 + RoPE + flow + CfC). ---
+    # --- 3. Portable CPU deployment path (Portable Mamba-3 + flow + CfC). ---
     cpu_inference_ms = None
     try:
         from hdml.deployment.onnx_exporter import HDMLDeploymentWrapper
@@ -168,7 +168,7 @@ def main() -> None:
         "cpu_portable_inference_hz": (1000.0 / cpu_inference_ms) if cpu_inference_ms else None,
         "cycle_samples": len(cycle_ms),
         "note": "closed-loop includes sensor read, normalisation, model inference and env physics step; "
-                "cpu path is the portable Mamba-1 deployment wrapper",
+                "cpu path is the portable Mamba-3 deployment wrapper",
     }
     out.write_text(json.dumps(record, indent=2), encoding="utf-8")
     logger.info(
