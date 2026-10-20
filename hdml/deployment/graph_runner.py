@@ -18,8 +18,17 @@ observations, actions, RTGs, and **real timesteps**, with no padding. For inputs
 longer than ``context_length`` the last ``context_length`` steps are used, which
 matches the evaluator's rolling-window policy.
 
+CfC memory
+----------
+The evaluator carries the CfC hidden state ``next_hx`` across control steps and
+resets it at episode start. The runner captures that same policy: a shared static
+hidden-state buffer is fed to every graph, and ``next_hx`` is copied back into it
+after each replay. Call :meth:`HDMLGraphRunner.reset` at the start of an episode.
+Unlike the old stateless path, graph and evaluator now use identical CfC memory.
+
 Usage:
     runner = HDMLGraphRunner(model, prop_dim=35, action_dim=12, context_length=20)
+    runner.reset()
     action = runner(states_np, rtgs_np, actions_np, timesteps_np)  # (T, d) arrays
 """
 from __future__ import annotations
@@ -61,15 +70,62 @@ class HDMLGraphRunner:
         if hasattr(model, "deterministic"):
             model.deterministic = True
 
+        # The evaluator carries CfC state across control steps. Capture that
+        # same policy: a shared static hidden-state buffer is an input to every
+        # graph, and each graph exposes its next_hx output.
+        cfc_filter = getattr(model, "cfc_filter", None)
+        self.cfc_state_size: int | None = None
+        if cfc_filter is not None:
+            cfc_core = getattr(cfc_filter, "cfc", None)
+            state_size = getattr(cfc_core, "state_size", None)
+            if state_size is None:
+                raise ValueError("CfC filter does not expose its hidden-state size")
+            self.cfc_state_size = int(state_size)
+        self._hx: torch.Tensor | None = (
+            torch.zeros(1, self.cfc_state_size, device=self.device)
+            if self.cfc_state_size is not None
+            else None
+        )
+
         self._states: dict[int, torch.Tensor] = {}
         self._rtgs: dict[int, torch.Tensor] = {}
         self._actions: dict[int, torch.Tensor] = {}
         self._timesteps: dict[int, torch.Tensor] = {}
         self._graphs: dict[int, torch.cuda.CUDAGraph] = {}
         self._outputs: dict[int, torch.Tensor] = {}
+        self._next_hx: dict[int, torch.Tensor] = {}
         if precapture:
             for seq_len in range(1, context_length + 1):
                 self._capture(seq_len)
+
+    def reset(self) -> None:
+        """Reset the carried CfC state at the start of an episode."""
+        if self._hx is not None:
+            self._hx.zero_()
+
+    def set_hx(self, hx: torch.Tensor | np.ndarray | None) -> None:
+        """Set the carried CfC state explicitly (``None`` resets to zeros)."""
+        if self._hx is None:
+            if hx is not None:
+                raise ValueError("This model has no CfC filter; hx must be None")
+            return
+        if hx is None:
+            self._hx.zero_()
+            return
+        hx_t = torch.as_tensor(hx, dtype=self._hx.dtype, device=self.device)
+        if hx_t.ndim == 1:
+            hx_t = hx_t.unsqueeze(0)
+        if hx_t.shape != self._hx.shape:
+            raise ValueError(
+                f"hx must have shape {tuple(self._hx.shape)}, got {tuple(hx_t.shape)}"
+            )
+        self._hx.copy_(hx_t)
+
+    def get_hx(self) -> np.ndarray | None:
+        """Return a CPU copy of the currently carried CfC state."""
+        if self._hx is None:
+            return None
+        return self._hx.detach().cpu().numpy().astype(np.float32)
 
     def _capture(self, seq_len: int) -> None:
         """Capture one graph for a static window of ``seq_len`` control steps."""
@@ -94,20 +150,24 @@ class HDMLGraphRunner:
                         rtgs=rtgs,
                         actions=actions,
                         timesteps=timesteps,
-                        hx=None,
+                        hx=self._hx,
                     )
         torch.cuda.current_stream().wait_stream(stream)
 
         graph = torch.cuda.CUDAGraph()
         with torch.inference_mode():
             with torch.cuda.graph(graph):
-                action_out, _, _ = self.model.get_action(
+                action_out, next_hx, _ = self.model.get_action(
                     states=states,
                     rtgs=rtgs,
                     actions=actions,
                     timesteps=timesteps,
-                    hx=None,
+                    hx=self._hx,
                 )
+        if self.cfc_state_size is not None:
+            if next_hx is None:
+                raise RuntimeError("CfC is enabled but get_action returned no next_hx")
+            self._next_hx[seq_len] = next_hx
         self._states[seq_len] = states
         self._rtgs[seq_len] = rtgs
         self._actions[seq_len] = actions
@@ -166,15 +226,26 @@ class HDMLGraphRunner:
         rtgs: np.ndarray,
         actions: np.ndarray,
         timesteps: np.ndarray,
+        *,
+        hx: torch.Tensor | np.ndarray | None = None,
+        carry_state: bool = True,
     ) -> np.ndarray:
         """Run one control step and return ``(action_dim,)``.
+
+        By default the runner advances the CfC state exactly like the evaluator:
+        the hidden state starts at zero after :meth:`reset`, is fed into every
+        replay, and is replaced by ``next_hx`` afterwards.
 
         Args:
             states: ``(T, prop_dim)`` normalized observations.
             rtgs: ``(T,)`` or ``(T, 1)`` normalized return-to-go values.
             actions: ``(T, action_dim)`` causal action history.
             timesteps: ``(T,)`` integer control steps, copied before replay.
+            hx: optional explicit CfC state to use for this call.
+            carry_state: when True, update the internal state to ``next_hx``.
         """
+        if hx is not None:
+            self.set_hx(hx)
         seq_len, states_np, rtgs_np, actions_np, timesteps_np = self._select_inputs(
             states, rtgs, actions, timesteps
         )
@@ -186,4 +257,7 @@ class HDMLGraphRunner:
         self._actions[seq_len].copy_(torch.from_numpy(actions_np).to(self.device))
         self._timesteps[seq_len].copy_(torch.from_numpy(timesteps_np).to(self.device))
         self._graphs[seq_len].replay()
-        return self._outputs[seq_len][0].detach().cpu().numpy().astype(np.float32)
+        action = self._outputs[seq_len][0].detach().cpu().numpy().astype(np.float32)
+        if carry_state and self._hx is not None:
+            self._hx.copy_(self._next_hx[seq_len])
+        return action

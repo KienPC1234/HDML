@@ -277,13 +277,14 @@ def test_cuda_graph_matches_eager_for_short_windows_and_real_timesteps() -> None
     )
 
     rng = np.random.default_rng(11)
-    for seq_len in (1, 1, 2, 4, 6):
+    for seq_len in (1, 2, 4, 6):
         states = rng.normal(size=(seq_len, 8)).astype(np.float32)
         actions = rng.normal(size=(seq_len, 3)).astype(np.float32)
         rtgs = rng.normal(size=(seq_len, 1)).astype(np.float32)
         timesteps = (100 + np.arange(seq_len)).astype(np.int64)
+        runner.reset()
         with torch.inference_mode():
-            eager, _, _ = model.get_action(
+            eager, eager_hx, _ = model.get_action(
                 states=torch.from_numpy(states).unsqueeze(0).cuda(),
                 rtgs=torch.from_numpy(rtgs).unsqueeze(0).cuda(),
                 actions=torch.from_numpy(actions).unsqueeze(0).cuda(),
@@ -292,6 +293,40 @@ def test_cuda_graph_matches_eager_for_short_windows_and_real_timesteps() -> None
             )
         graph = runner(states, rtgs, actions, timesteps)
         np.testing.assert_allclose(graph, eager[0].cpu().numpy(), atol=1e-5, rtol=1e-5)
+        assert runner.get_hx() is not None and eager_hx is not None
+        np.testing.assert_allclose(
+            runner.get_hx(), eager_hx.cpu().numpy(), atol=1e-5, rtol=1e-5
+        )
+
+    # Stateful rollout parity: same window repeated while CfC state is carried.
+    runner.reset()
+    hx_eager: torch.Tensor | None = None
+    actions_seen: list[np.ndarray] = []
+    states = rng.normal(size=(6, 8)).astype(np.float32)
+    actions = rng.normal(size=(6, 3)).astype(np.float32)
+    rtgs = rng.normal(size=(6, 1)).astype(np.float32)
+    timesteps = (200 + np.arange(6)).astype(np.int64)
+    for _ in range(4):
+        with torch.inference_mode():
+            eager, hx_eager, _ = model.get_action(
+                states=torch.from_numpy(states).unsqueeze(0).cuda(),
+                rtgs=torch.from_numpy(rtgs).unsqueeze(0).cuda(),
+                actions=torch.from_numpy(actions).unsqueeze(0).cuda(),
+                timesteps=torch.from_numpy(timesteps).unsqueeze(0).cuda(),
+                hx=hx_eager,
+            )
+        graph = runner(states, rtgs, actions, timesteps)
+        np.testing.assert_allclose(graph, eager[0].cpu().numpy(), atol=1e-5, rtol=1e-5)
+        assert hx_eager is not None and runner.get_hx() is not None
+        np.testing.assert_allclose(
+            runner.get_hx(), hx_eager.cpu().numpy(), atol=1e-5, rtol=1e-5
+        )
+        actions_seen.append(graph)
+    assert not np.allclose(actions_seen[0], actions_seen[-1]), (
+        "carried CfC state had no effect on the graph rollout"
+    )
+    runner.reset()
+    assert np.allclose(runner.get_hx(), 0.0)
 
     # Distinct absolute timesteps must change the output and still match eager.
     states = rng.normal(size=(4, 8)).astype(np.float32)
