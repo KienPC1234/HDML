@@ -41,13 +41,16 @@ def get_d4rl_normalized_score(env_name: str, raw_return: float) -> float:
 def compute_action_smoothness(actions: np.ndarray | torch.Tensor) -> float:
     """Compute mean second-order difference (jerk metric / smoothness) of an action sequence.
 
-    Lower values indicate smoother joint actuation.
+    Lower values indicate smoother commanded actuation. On the Unitree A1
+    environments the action is a normalized *target joint angle* for a position
+    servo, not a direct torque; this is therefore a command-smoothness proxy,
+    not a measured torque-chatter metric.
 
     Args:
         actions: Array of actions with shape (T, D_a) or (B, T, D_a).
 
     Returns:
-        Mean absolute jerk value across time and action dimensions.
+        Mean absolute second difference across time and action dimensions.
     """
     if isinstance(actions, torch.Tensor):
         actions_np = actions.detach().cpu().numpy()

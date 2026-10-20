@@ -134,3 +134,81 @@ def test_hierarchical_micro_tier_shapes_and_grad() -> None:
     )
     assert action.shape == (1, 6)
     assert torch.isfinite(action).all()
+
+
+def test_cfc_full_sequence_matches_stepwise_carried_state() -> None:
+    """Training (full sequence) and rollout (token-by-token hx) must agree."""
+    torch.manual_seed(0)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cfc = CfCActionFilter(
+        action_dim=6, chunk_size=1, state_dim=16, units=24, residual=0.5
+    ).to(device)
+    actions = torch.randn(3, 7, 6, device=device)
+    latent = torch.randn(3, 7, 16, device=device)
+
+    full, full_hx = cfc(actions, latent, hx=None)
+    stepwise: list[torch.Tensor] = []
+    hx: torch.Tensor | None = None
+    for t in range(actions.shape[1]):
+        out_t, hx = cfc(actions[:, t], latent[:, t], hx=hx)
+        stepwise.append(out_t)
+    stepwise_tensor = torch.stack(stepwise, dim=1)
+
+    torch.testing.assert_close(stepwise_tensor, full, atol=1e-6, rtol=1e-5)
+    assert hx is not None
+    torch.testing.assert_close(hx, full_hx, atol=1e-6, rtol=1e-5)
+
+
+def test_cfc_reset_starts_from_zero_state() -> None:
+    torch.manual_seed(1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cfc = CfCActionFilter(
+        action_dim=5, chunk_size=1, state_dim=12, units=16, residual=0.5
+    ).to(device)
+    actions = torch.randn(2, 5, 5, device=device)
+    latent = torch.randn(2, 5, 12, device=device)
+
+    full, _ = cfc(actions, latent, hx=None)
+    _, hx0 = cfc(actions[:, 0], latent[:, 0], hx=None)
+    carried, _ = cfc(actions[:, 1], latent[:, 1], hx=hx0)
+    reset, _ = cfc(actions[:, 1], latent[:, 1], hx=None)
+
+    torch.testing.assert_close(carried, full[:, 1], atol=1e-6, rtol=1e-5)
+    torch.testing.assert_close(reset, cfc(actions[:, 1], latent[:, 1], hx=None)[0])
+    assert not torch.allclose(carried, reset, atol=1e-7, rtol=1e-7)
+
+
+def test_get_action_carries_cfc_state_across_long_context() -> None:
+    """The old guard rejected hx with T>1; stateful rollout must accept it."""
+    torch.manual_seed(2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = HDMLModel(
+        prop_dim=9,
+        action_dim=4,
+        d_model=32,
+        num_mamba_layers=1,
+        d_subgoal=9,
+        chunk_size=3,
+        use_native_mamba3=False,
+        use_cfc=True,
+        cfc_units=8,
+        cfc_residual=0.5,
+        use_critic=False,
+        num_flow_steps=2,
+    ).to(device).eval()
+    model.deterministic = True
+    states = torch.randn(1, 5, 9, device=device)
+    actions = torch.randn(1, 5, 4, device=device)
+    rtgs = torch.zeros(1, 5, 1, device=device)
+    timesteps = torch.arange(5, device=device).unsqueeze(0)
+
+    action_reset, hx_reset, _ = model.get_action(
+        states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, hx=None
+    )
+    assert hx_reset is not None
+    action_carried, hx_carried, _ = model.get_action(
+        states=states, rtgs=rtgs, actions=actions, timesteps=timesteps, hx=hx_reset
+    )
+    assert hx_carried is not None and torch.isfinite(hx_carried).all()
+    assert action_reset.shape == action_carried.shape == (1, 4)
+    assert not torch.allclose(action_reset, action_carried, atol=1e-7, rtol=1e-7)

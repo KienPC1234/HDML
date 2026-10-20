@@ -8,9 +8,15 @@ from typing import cast
 
 
 class CfCActionFilter(nn.Module):
-    """
-    Closed-Form Continuous-Time (CfC) Action Filter for HDML.
-    Maps predicted action chunks and high-frequency latent state to smooth continuous-time physical actions.
+    """Closed-Form Continuous-Time (CfC) action filter for HDML.
+
+    The filter input is ``[first action of the flow chunk, Mamba latent]``.
+    ``state_repr`` is the backbone latent (``d_model``), **not** the raw sensor
+    vector: the report's conceptual equation is implemented here in latent
+    space. ``ncps.torch.CfC`` advances one normalized time unit per token when
+    no ``timespans`` tensor is supplied (``ts = 1.0``). That is a normalized
+    step, not a physical 20 ms. Changing it to ``0.02`` changes the ODE
+    dynamics and is not done implicitly for existing checkpoints.
     """
     def __init__(
         self,
@@ -63,11 +69,13 @@ class CfCActionFilter(nn.Module):
         Filter actions dynamically via continuous-time ODE dynamics.
         Args:
             actions: (B, T, action_dim), (B, action_dim), or (B, T, chunk, action_dim)
-            state_repr: (B, T, state_dim) or (B, state_dim)
-            hx: Hidden state
+            state_repr: Mamba latent, (B, T, state_dim) or (B, state_dim).
+                This is not the raw proprioceptive/sensor vector.
+            hx: Previous CfC hidden state, or None to start from zeros.
         Returns:
             filtered_action: Same shape as actions
-            next_hx: Updated hidden state
+            next_hx: Updated hidden state. Passing it to the next call advances
+                the same recurrence one token at a time.
         """
         orig_shape = actions.shape
         if actions.ndim == 2:

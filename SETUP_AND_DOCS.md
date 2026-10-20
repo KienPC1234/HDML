@@ -19,10 +19,11 @@ This document specifies the software architecture, execution environment, and do
 
 The codebase implements the verified HDML architecture:
 1. **Backbone**: Native Mamba-3 selective state-space model (`mamba_ssm.modules.mamba3.Mamba3`) with built-in rotary state-space embedding and trapezoidal discretisation (`hdml/models/mamba3_native.py`).
-2. **Action Policy**: Flow-Matching continuous-time velocity field over an action chunk ($k=5$), solved via deterministic Euler integration.
-3. **Micro-Tier Filtering**: Closed-Form Continuous-time neural network (CfC, `ncps.torch.CfC`) smoothing actuator control signals at the micro rate.
+2. **Action Policy**: Flow-Matching continuous-time velocity field over an action chunk ($k=5$), solved via deterministic Euler integration. `chunk_size=5` is the number of emitted flow actions; it is not the macro-plan lifetime.
+3. **Micro-Tier Filtering**: Closed-Form Continuous-time neural network (CfC, `ncps.torch.CfC`) smoothing actuator control signals at the micro rate. The filter input is `[first flow action, Mamba latent]`, not the raw sensor vector. Its hidden state is carried across control steps and reset at episode start; the default normalized time step is 1.0.
 4. **Regularization**: HiQC critic with PAVE (Path-Action Value Equalization) and Grad-CAPS (action gradient penalty) integrated into `HDMLTrainer`.
-5. **Two-Tier Control**: Macro planning emits subgoals at low frequency ($1-5\text{ Hz}$); micro tier samples and tracks via continuous filtering ($50-100\text{ Hz}$).
+5. **Two-Tier Control**: Macro planning emits subgoals every `macro_interval` control steps; the micro tier holds the subgoal and regenerates an action every step (`act_from_subgoal`). The flow chunk is not executed action-by-action. PACE monitors the forward-dynamics prediction $s_{t+\text{chunk\_size}}$ at its due step and distinguishes deviation from normal plan expiry.
+6. **Execution Semantics**: Unitree A1 actions are normalized target joint angles for position servos (`data.ctrl`), not direct motor torques. Action-jerk numbers are therefore command-smoothness proxies.
 
 ### Verified Performance Summary (HalfCheetah-v5, RTX 4070 SUPER, Seed 42)
 
@@ -73,4 +74,5 @@ python scripts/measure_closed_loop.py \
 - [REPRODUCIBILITY.md](REPRODUCIBILITY.md): Protocol for verifying and reproducing benchmark results.
 - [docs/ONNX_DEPLOYMENT.md](docs/ONNX_DEPLOYMENT.md): Production ONNX export reference, C#/C++/Python game engine runtime integration, and latency benchmarks.
 - [docs/REBUILD_2026-10-09.md](docs/REBUILD_2026-10-09.md): Detailed rebuild log, architectural audit, and run artifacts.
+- [docs/OPERATIONAL_FIXES_2026-10-20.md](docs/OPERATIONAL_FIXES_2026-10-20.md): PACE prediction timing, stateful CfC rollout, CUDA-graph timesteps/short windows, and the re-run evidence.
 - [docs/AI_ASSISTANCE.md](docs/AI_ASSISTANCE.md): Disclosure of AI-assisted engineering and administrative tasks.
