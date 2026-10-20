@@ -41,5 +41,8 @@ Existing `results/*.txt`, plots, videos, the preprint, DOI record, and v1.0.0 we
 - PACE schedules the forward-dynamics prediction at its trained horizon `t + chunk_size`, distinguishes deviation from plan expiry, and records absolute trigger steps. It no longer turns a multi-step macro plan into per-step backbone calls.
 - CfC rollout carries `next_hx` and resets at episode start. The old multi-step `hx` guard was removed because the backbone context is not replayed through the CfC. A real-checkpoint check shows full-sequence and stepwise states agree within `1.2e-7`.
 - CUDA graph inference copies real timesteps before replay and captures exact-length graphs `1..context_length`; zero padding is no longer used for short windows.
+- CUDA graph inference now carries the CfC hidden state like the evaluator: shared static `hx` buffer, `next_hx` copied back after replay, reset at episode start. Eager stateful, graph stateful, and `next_hx` agree bit-exactly on lengths 1–20.
+- On 10 deterministic Unitree episodes, stateful CfC changes return by `-0.71` (`-0.059%`) and the jerk proxy from `0.0971` to `0.1140` (`+17.4%`) versus stateless. Graph stateful matches eager stateful exactly.
+- PACE cannot react early when `chunk_size == macro_interval`; its first due check coincides with the scheduled replan. The perturbation/noise-benefit experiment was not run.
 - Unitree action is documented as a target joint angle for a position servo, not direct torque. The jerk metric is a command-smoothness proxy.
 - Evidence: `results/fix_pace_cfc_cudagraph/` and `docs/OPERATIONAL_FIXES_2026-10-20.md`. Existing benchmark numbers were not regenerated.

@@ -4,10 +4,10 @@ Scope: fix three operational integration bugs without changing the architecture,
 the submitted datasets, or the submitted checkpoints.
 
 - Base commit reviewed: `7b45d20`
-- Fix commit: `e2402be10f754337542e721d7c39099a4bbc36cb`
-- Branch: `fix/pace-cfc-cudagraph-operational`
+- Fix commits: `e2402be` (PACE/CfC/CUDA graph), `9ae4275` (stateful CfC inside CUDA graph)
+- Branch: `fix/pace-cfc-cudagraph-operational`, fast-forwarded into `master`
 - GPU: NVIDIA GeForce RTX 4070 SUPER, PyTorch `2.13.0+cu130`
-- New artifacts: `results/fix_pace_cfc_cudagraph/`
+- New artifacts: `results/fix_pace_cfc_cudagraph/` (all currently reference `9ae4275`)
 
 Every number below comes from a run saved under that directory. Old benchmark
 artifacts were left untouched.
@@ -88,6 +88,21 @@ The threshold-0 run replans as often as a deviation can be due (every
 `chunk_size` steps), **not** every step. The `s_{t+5}` prediction is therefore
 never mistaken for `s_{t+1}`.
 
+### Limitation that must not be overstated
+
+With `chunk_size=5` and `macro_interval=5`, the first possible deviation check is
+at step `t+5`, which is exactly the step at which the plan must be refreshed
+anyway. PACE therefore cannot produce an **early** reaction inside that 5-step
+plan; it can only classify the trigger as deviation rather than expiry at the
+same boundary.
+
+Early replanning is possible only when a prediction becomes due before the
+current plan expires, for example `macro_interval=10` (trigger at step 5), or a
+pending prediction from an older plan that outlives a shorter plan. The
+threshold-0 test above demonstrates the mechanism, **not** a noise-rejection
+benefit. Claiming a robustness gain would require a perturbation sweep at a
+realistic threshold against periodic replanning; that has not been run.
+
 ---
 
 ## 2. CfC: one memory rule for training and rollout
@@ -104,6 +119,12 @@ The old guard that rejected `hx` when the Mamba context had more than one step
 was removed. The backbone still consumes the full causal window, while the CfC
 advances by exactly one token (the window's last position). The context is not
 replayed through the CfC at the same time.
+
+`HDMLGraphRunner` now uses the same policy. A shared static `hx` buffer is an
+input to every captured graph, `next_hx` is copied back after each replay, and
+`reset()` zeroes the state at episode start. `set_hx()` / `get_hx()` expose the
+state for parity checks. The previous runner passed `hx=None` and discarded
+`next_hx`, so it only represented the old stateless policy.
 
 ### Inference check before any retraining
 
@@ -146,17 +167,21 @@ carry paths are demonstrably different (`0.1918`), and reset is deterministic.
 
 ---
 
-## 3. CUDA graph: real timesteps and exact short windows
+## 3. CUDA graph: real timesteps, exact short windows, and carried CfC state
 
 ### Changes
 
-- `HDMLGraphRunner` now accepts real `timesteps` and copies them into the static
+- `HDMLGraphRunner` accepts real `timesteps` and copies them into the static
   buffer before every replay.
 - Zero padding was removed. The runner captures one graph per sequence length
   used (`1 .. context_length`) and fills a same-shape buffer. A 3-step window
   replays a 3-step graph; it is not compared against a padded 20-step graph.
 - Inputs longer than `context_length` use the last `context_length` steps, which
   matches the evaluator's rolling window.
+- The runner now carries CfC state: a shared static hidden-state buffer is fed
+  to every graph, `next_hx` is copied back after each replay, and `reset()`
+  zeroes it at episode start. The old `hx=None` / discard-`next_hx` behaviour is
+  gone. This is the same policy as the evaluator.
 
 ### Equivalence
 
@@ -167,33 +192,53 @@ Command:
   --config configs/unitree_a1_cfc_strong.yaml \
   --checkpoint checkpoints/rebuild_unitree/unitree_a1/best_model.pt \
   --output results/fix_pace_cfc_cudagraph/cuda_graph_bench.json \
-  --rollout-steps 300 --samples 500
+  --rollout-steps 300 --eval-episodes 10 --eval-max-steps 1000 --samples 500
 ```
 
 Result (`cuda_graph_bench.json`):
 
-- Eager and graph were compared on identical observation, action, RTG, and
-  timestep sequences for **every length 1–20**.
+- Eager and graph were compared on identical observation, action, RTG, timestep,
+  and **starting CfC state** sequences for **every length 1–20**.
 - Max absolute action difference: `0.0` at every length.
+- Max absolute `next_hx` difference: `0.0` at every length.
+- Reset repeat difference: `0.0`; `hx` after reset: `0.0`.
 - Changing absolute timesteps by +1000 changed both eager and graph output by
-  `0.4670`; graph-vs-eager difference was `0.0` for both timestep sets. The
+  `0.4408`; graph-vs-eager difference was `0.0` for both timestep sets. The
   runner is using the supplied timesteps, not a fixed `arange`.
-- Independent 300-step rollouts from seed 42: return `407.2422053574205` in both
-  modes, max action difference `0.0`.
+- Independent 300-step rollouts from seed 42, both carrying CfC state: return
+  `415.4320940709106` in both modes, max action difference `0.0`.
+
+### Closed-loop evaluation after unifying CfC memory
+
+10 deterministic episodes of 1000 steps, seed base 42, checkpoint step 6513:
+
+| Policy | Return mean | Return std | Jerk | Completion |
+| :-- | --: | --: | --: | --: |
+| Eager, stateless CfC (old) | `1207.1505` | `0.0` | `0.09708` | `100%` |
+| Eager, stateful CfC (new evaluator) | `1206.4399` | `0.0` | `0.11401` | `100%` |
+| Graph, stateful CfC (new runner) | `1206.4399` | `0.0` | `0.11401` | `100%` |
+
+Stateful minus stateless return: `-0.7106` (`-0.059%`). The action-jerk proxy
+rises from `0.09708` to `0.11401` (`+17.4%`). Graph and eager stateful results
+are identical, so the change comes from the CfC policy itself, not from the
+CUDA graph.
+
+Caveat: `QuadrupedDogEnv` resets to a fixed keyframe and the policy is
+deterministic, so these 10 episodes are repeated runs of the same trajectory
+(std `0.0`). This is an operational change check, not a multi-seed benchmark.
 
 ### Latency after the fix
 
 | Measurement | Result |
 | :-- | --: |
-| Eager pure inference | `8.301 ms` (120.1 Hz) |
-| Graph pure inference | `0.489 ms` (2045 Hz) |
-| Graph speed-up, pure inference | `~17.0x` |
-| Graph replay only | `0.523 ms` |
-| Graph control step (normalise + context + replay + clip) | `0.608 ms` (1645 Hz) |
-| Graph end-to-end (control step + MuJoCo physics) | `1.909 ms` |
-| Eager control step | `8.58 ms` (117 Hz) |
-| Eager end-to-end | `9.92 ms` (101 Hz) |
-| Capture time for all 20 lengths | `6.14 s` |
+| Eager pure inference | `8.077 ms` (123.8 Hz) |
+| Graph pure inference | `0.492 ms` (2033 Hz) |
+| Graph speed-up, pure inference | `~16.4x` |
+| Graph replay only | `0.542 ms` |
+| Graph control step (normalise + context + replay + clip) | `0.625 ms` (1600 Hz) |
+| Graph end-to-end (control step + MuJoCo physics) | `1.896 ms` |
+| Eager end-to-end | `9.604 ms` (104.1 Hz) |
+| Capture time for all 20 lengths | `6.12 s` |
 
 The historical `0.536 ms` graph figure was a **control-step-style** measurement,
 not end-to-end including physics. The new record labels both quantities
@@ -219,6 +264,8 @@ CfC (`tests/test_core_models.py`):
 CUDA graph (`tests/test_evaluation_and_deployment.py`):
 
 - graph equals eager for short windows (1, 2, 4, 6 steps) with no padding;
+- graph equals eager for both action and `next_hx` when CfC state is carried;
+- `reset()` returns the state to zero and repeated resets are deterministic;
 - changing timesteps changes the output and still matches eager.
 
 Verification run:
@@ -250,3 +297,8 @@ The existing Unitree/HalfCheetah benchmark numbers were not regenerated. They
 remain historical results under their original commits and are not claimed as
 measurements of this fix. Only the affected operational checks above were
 re-run.
+
+PACE was not tested under sensor noise or force perturbations at a realistic
+threshold. The current evidence establishes correct timing and trigger
+classification, not a robustness benefit. With `chunk_size=5` and
+`macro_interval=5`, PACE cannot react before the scheduled replan step.
